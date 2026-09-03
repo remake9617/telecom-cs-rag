@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.cs</groupId>
+        <artifactId>cs-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>cs-ticket</artifactId>
+    <name>cs-ticket</name>
+    <description>工单层：转人工工单判定/生成/后台回复/查看；坐席工作台（阶段二）</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.cs</groupId>
+            <artifactId>cs-framework</artifactId>
+        </dependency>
+        <!-- MyBatis-Plus 于 M3 工单实现时引入 -->
+    </dependencies>
+</project>

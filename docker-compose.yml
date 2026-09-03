@@ -1,0 +1,79 @@
+# =====================================================================
+# 电信运营商智能客服系统 —— 本地/VM 中间件编排（D14）
+# 在 Ubuntu VM 内执行：docker compose up -d
+# 说明：Compose v2 语法（无需 version 字段）；密码等敏感值走同目录 .env
+# 资源按 4核/8G VM 调优：ES heap 限 1G，单节点，关闭 xpack 安全简化本地
+# =====================================================================
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: cs-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-cs_root_123}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-cs_db}
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # 首次启动自动执行初始化脚本（建表 schema 放 ./sql/init/*.sql）
+      - ./sql/init:/docker-entrypoint-initdb.d:ro
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD:-cs_root_123}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  elasticsearch:
+    # 自定义镜像：ES 8.18.8 + IK 中文分词插件（见 deploy/elasticsearch/Dockerfile）
+    # 版本与 Spring AI 1.1.2 传递的 elasticsearch-java client(8.18.8) 对齐
+    build:
+      context: ./deploy/elasticsearch
+      dockerfile: Dockerfile
+    image: cs-elasticsearch:8.18.8-ik
+    container_name: cs-es
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      # 8G VM：ES heap 限 1G（不超过物理内存一半，留余量给 MySQL/Redis/系统）
+      ES_JAVA_OPTS: "-Xms1g -Xmx1g"
+      bootstrap.memory_lock: "true"
+    ports:
+      - "9200:9200"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: cs-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  mysql-data:
+  es-data:
+  redis-data:

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.cs</groupId>
+        <artifactId>cs-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>cs-ingestion</artifactId>
+    <name>cs-ingestion</name>
+    <description>入库层：文档解析 → 分块 → Embedding → ES 索引；顺序入库流水线（MVP）</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.cs</groupId>
+            <artifactId>cs-framework</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.cs</groupId>
+            <artifactId>cs-infra-ai</artifactId>
+        </dependency>
+        <!-- 文档解析库（Tika/PDFBox/POI/Jsoup）于 M1 入库实现时按需引入 -->
+    </dependencies>
+</project>

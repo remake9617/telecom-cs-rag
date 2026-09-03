@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.cs</groupId>
+        <artifactId>cs-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>cs-qa</artifactId>
+    <name>cs-qa</name>
+    <description>问答层：问题重写 → 意图识别 → 检索 → Prompt 组装 → 生成 → 溯源 → SSE → 会话记忆</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.cs</groupId>
+            <artifactId>cs-framework</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.cs</groupId>
+            <artifactId>cs-infra-ai</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.cs</groupId>
+            <artifactId>cs-knowledge</artifactId>
+        </dependency>
+    </dependencies>
+</project>

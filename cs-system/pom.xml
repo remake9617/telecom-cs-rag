@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.cs</groupId>
+        <artifactId>cs-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>cs-system</artifactId>
+    <name>cs-system</name>
+    <description>系统层：用户/角色/权限（RBAC）、反馈（点赞点踩）、审计日志、Spring Security + JWT 认证</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.cs</groupId>
+            <artifactId>cs-framework</artifactId>
+        </dependency>
+        <!-- Spring Security + JWT + MyBatis-Plus 于 M3 认证实现时引入 -->
+    </dependencies>
+</project>

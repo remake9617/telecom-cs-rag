@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.cs</groupId>
+        <artifactId>cs-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>cs-knowledge</artifactId>
+    <name>cs-knowledge</name>
+    <description>知识层：知识库/文档元数据 + ES 混合检索（向量 kNN + BM25 + RRF 融合 + Rerank）+ 增量更新</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.cs</groupId>
+            <artifactId>cs-framework</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.cs</groupId>
+            <artifactId>cs-infra-ai</artifactId>
+        </dependency>
+        <!-- Spring AI Elasticsearch 向量存储：dense_vector kNN + BM25 + RRF 一体化 -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-vector-store-elasticsearch</artifactId>
+        </dependency>
+    </dependencies>
+</project>

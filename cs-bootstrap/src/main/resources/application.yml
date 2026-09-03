@@ -1,0 +1,58 @@
+server:
+  port: 8080
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+spring:
+  application:
+    name: cs-server
+
+  # ===== Elasticsearch（VM 内，承载向量 kNN + BM25 + RRF 混合检索）=====
+  # ES_URIS 指向 VM 地址；本地默认 localhost:9200（若中间件与后端同机）
+  elasticsearch:
+    uris: ${ES_URIS:http://localhost:9200}
+    connection-timeout: 30s
+    socket-timeout: 30s
+
+  ai:
+    # ===== Spring AI 向量存储（ES）：chunk 索引，bge-m3 = 1024 维，cosine =====
+    vectorstore:
+      elasticsearch:
+        # 关闭自动建索引：改用 deploy/elasticsearch/es-chunk-mapping.json 手动建（含 IK 中文分词）
+        initialize-schema: false
+        index-name: cs_knowledge_chunk
+        dimensions: 1024
+        similarity: cosine
+
+    # ===== 阿里百炼 DashScope：Chat 主力 qwen-plus（API Key 走环境变量，绝不入库 D19）=====
+    dashscope:
+      api-key: ${AI_DASHSCOPE_API_KEY:}
+      chat:
+        options:
+          model: qwen-plus
+          temperature: 0.7
+
+    # ===== 硅基流动：Embedding(bge-m3) / Rerank(bge-reranker-v2-m3)，走 OpenAI 兼容协议 =====
+    # base-url 不含 /v1（Spring AI 默认 embeddings-path=/v1/embeddings 会自动拼接）
+    # Rerank 的精确接入方式于 M1 检索实现时最终确认
+    openai:
+      api-key: ${SILICONFLOW_API_KEY:}
+      base-url: ${SILICONFLOW_BASE_URL:https://api.siliconflow.cn}
+      embedding:
+        options:
+          model: BAAI/bge-m3
+
+# ===== 日志 =====
+logging:
+  level:
+    root: INFO
+    com.cs: DEBUG
+    org.springframework.ai: INFO
+
+# ===== 说明 =====
+# 1) 本文件为 M0 骨架基础配置；MySQL / Redis 连接待 M1/M3 引入 mybatis-plus、redis starter 时补充。
+# 2) 所有密钥走环境变量：AI_DASHSCOPE_API_KEY、SILICONFLOW_API_KEY，切勿硬编码或提交入库。
+# 3) 编译验证（mvn clean compile）不需要中间件；启动验证需 VM 内 MySQL/ES/Redis 就绪 + 填入 API Key。

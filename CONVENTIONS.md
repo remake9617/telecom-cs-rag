@@ -23,7 +23,7 @@
 |---|---|---|
 | cs-framework | 统一响应/异常/错误码/工具 | 无内部依赖（最底层） |
 | cs-infra-ai | 模型客户端（Chat/Embedding/Rerank） | framework |
-| cs-ingestion | 解析→分块→向量化→ES 索引 | framework, infra-ai |
+| cs-ingestion | 解析→分块→向量化→ES 索引 | framework, infra-ai, knowledge |
 | cs-knowledge | 混合检索（向量+BM25+RRF+Rerank）+ 元数据 | framework, infra-ai |
 | cs-qa | 问答主链（重写/意图/检索/生成/溯源/SSE） | framework, infra-ai, knowledge |
 | cs-ticket | 转人工工单 | framework |

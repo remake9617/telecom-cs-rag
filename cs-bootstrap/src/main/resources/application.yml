@@ -23,6 +23,13 @@ spring:
     connection-timeout: 30s
     socket-timeout: 30s
 
+  # ===== MySQL 业务库（VM 内，宿主端口 13306）=====
+  datasource:
+    url: "jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:13306}/${MYSQL_DATABASE:cs_db}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true"
+    username: root
+    password: ${MYSQL_ROOT_PASSWORD:cs_root_123}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
   ai:
     # ===== 指定各能力的模型 provider（多 starter 共存时避免 bean 冲突）=====
     # Chat 用 dashscope(qwen-plus)；Embedding 用 openai 兼容(硅基流动 bge-m3)
@@ -62,6 +69,15 @@ logging:
     root: INFO
     com.cs: DEBUG
     org.springframework.ai: INFO
+
+# ===== MyBatis-Plus =====
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true   # 表 snake_case ↔ 实体 camelCase
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto                      # 主键自增（对齐 schema.sql 的 AUTO_INCREMENT）
 
 # ===== 说明 =====
 # 1) 本文件为 M0 骨架基础配置；MySQL / Redis 连接待 M1/M3 引入 mybatis-plus、redis starter 时补充。

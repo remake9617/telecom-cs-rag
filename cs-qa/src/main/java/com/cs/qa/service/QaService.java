@@ -92,7 +92,7 @@ public class QaService {
         if (IntentService.INTENT_TICKET.equals(intent)) {
             Ticket ticket = ticketService.createTicket(userId, convId, question, "意图识别为转人工(TICKET)");
             String hint = "这个问题需要人工客服为您处理，我已为您创建工单（编号 " + ticket.getId() + "），请稍后在「我的工单」查看回复。";
-            finishWithText(emitter, convId, hint, rewritten, intent, List.of(), true);
+            finishWithText(emitter, convId, hint, rewritten, intent, List.of(), ticket.getId());
             return;
         }
 
@@ -108,7 +108,7 @@ public class QaService {
             if (chunks.isEmpty()) {
                 Ticket ticket = ticketService.createTicket(userId, convId, question, "知识库无召回，转人工");
                 String fallback = "抱歉，我在知识库中没有找到足够相关的资料。我已为您创建工单（编号 " + ticket.getId() + "），人工客服会尽快处理，您可在「我的工单」查看回复。";
-                finishWithText(emitter, convId, fallback, rewritten, intent, List.of(), true);
+                finishWithText(emitter, convId, fallback, rewritten, intent, List.of(), ticket.getId());
                 return;
             }
         }
@@ -140,10 +140,11 @@ public class QaService {
 
     /** 直接以固定文本结束（转人工/兑底场景）：message → ticket_hint → 落库 → done */
     private void finishWithText(SseEmitter emitter, Long convId, String text,
-                                String rewritten, String intent, List<RetrievedChunk> chunks, boolean ticketHint) {
+                                String rewritten, String intent, List<RetrievedChunk> chunks, Long ticketId) {
         sendEvent(emitter, "message", Map.of("delta", text));
-        if (ticketHint) {
-            sendEvent(emitter, "ticket_hint", Map.of("conversationId", convId));
+        if (ticketId != null) {
+            // 后端已自动建单：ticket_hint 带 ticketId + autoCreated，前端显示“查看工单”而非重复建单
+            sendEvent(emitter, "ticket_hint", Map.of("conversationId", convId, "ticketId", ticketId, "autoCreated", true));
         }
         Long msgId = saveAssistantMessage(convId, text, rewritten, intent);
         saveReferences(msgId, chunks);

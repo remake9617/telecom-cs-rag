@@ -2,6 +2,7 @@ import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { BizError, type R } from './types';
 import { useAuthStore } from '@/stores/authStore';
 import { notify } from '@/utils/notify';
+import { handleUnauthorized } from '@/utils/redirect';
 import { API_BASE_URL } from '@/config';
 
 // axios 实例 + 拦截器：统一注入 JWT、解包 R<T>、集中错误提示。
@@ -14,14 +15,6 @@ export const client = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15000,
 });
-
-/** 401 时跳登录并带回跳地址（会话失效属低频场景，整页跳转可接受，且能规避路由循环依赖） */
-function redirectToLogin(): void {
-  const { pathname, search } = window.location;
-  if (pathname.startsWith('/login')) return;
-  const redirect = encodeURIComponent(pathname + search);
-  window.location.assign(`/login?redirect=${redirect}`);
-}
 
 // 请求拦截器：注入 Bearer JWT
 client.interceptors.request.use((config: InternalAxiosRequestConfig) => {
@@ -41,7 +34,8 @@ client.interceptors.response.use(
     const r = response.data as R<unknown>;
     if (r && typeof r.code === 'number') {
       if (r.code === 0) return r.data;
-      notify.error(r.message || '请求失败');
+      // RBAC（契约通用约定）：已认证但角色不足 -> HTTP 200 + code=1003，提示“无权限”但不跳登录
+      notify.error(r.code === 1003 ? r.message || '无权限访问该资源' : r.message || '请求失败');
       return Promise.reject(new BizError(r.code, r.message, r.traceId));
     }
     // 非标准响应体（理论上不出现）：原样返回 data
@@ -50,9 +44,9 @@ client.interceptors.response.use(
   (error: AxiosError) => {
     const status = error.response?.status;
     if (status === 401) {
-      useAuthStore.getState().logout();
+      // 未认证（无/失效 token）：清登录态 + 跳登录，与 SSE 的 401 处理一致
       notify.error('登录已过期，请重新登录');
-      redirectToLogin();
+      handleUnauthorized();
     } else if (status === 403) {
       notify.error('无权限访问该资源');
     } else if (error.code === 'ECONNABORTED') {

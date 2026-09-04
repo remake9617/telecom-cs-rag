@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Input, Space, Table, Tag, Typography } from 'antd';
+import { Input, Space, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useUsers } from '@/hooks/useSystem';
 import type { Role, UserVO } from '@/types';
@@ -9,11 +9,11 @@ const { Text } = Typography;
 const ROLE_META: Record<Role, { color: string; label: string }> = {
   ADMIN: { color: 'red', label: '管理员' },
   AGENT: { color: 'blue', label: '客服坐席' },
-  USER: { color: 'default', label: '访客' },
+  VISITOR: { color: 'default', label: '访客' },
 };
 
-// 用户管理（管理员）：列表 + 关键词搜索 + 分页。
-// 注意：/api/system/users 为提案端点，未在 contract/rest-api.md 冻结，详见 api/modules/system.ts。
+// 用户管理（仅 ADMIN）：列表 + 关键词搜索 + 分页。
+// 契约见 contract/rest-api.md 第 7 节：GET /api/system/users?current=&size=&keyword= -> R<PageVO<UserVO>>。
 export default function Users() {
   const [page, setPage] = useState({ current: 1, size: 10 });
   const [keyword, setKeyword] = useState('');
@@ -40,14 +40,6 @@ export default function Users() {
 
   return (
     <div>
-      <Alert
-        type="info"
-        showIcon
-        closable
-        style={{ marginBottom: 16 }}
-        message="用户管理端点为提案（未在 rest-api.md 冻结）"
-        description="当前由 Mock 提供数据用于演示；正式接入需负责人确认契约并更新 rest-api.md 后联调。"
-      />
       <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 16 }} wrap>
         <Text strong style={{ fontSize: 16 }}>
           用户管理

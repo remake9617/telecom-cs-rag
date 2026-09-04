@@ -37,7 +37,7 @@ export function useChatStream() {
           {
             onDelta: (delta) => useChatStore.getState().appendDelta(tempId, delta),
             onReference: (refs) => useChatStore.getState().setReferences(tempId, refs),
-            onTicketHint: () => useChatStore.getState().markTicketHint(tempId),
+            onTicketHint: (info) => useChatStore.getState().markTicketHint(tempId, info),
             onDone: (info) => {
               useChatStore.getState().finishAssistant(tempId, info);
               // 新会话可能已生成：失效会话列表，让侧栏出现/更新该会话

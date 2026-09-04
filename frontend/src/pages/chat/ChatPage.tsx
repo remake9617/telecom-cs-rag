@@ -115,14 +115,20 @@ export default function ChatPage() {
     [feedbackMutate],
   );
 
-  const handleCreateTicket = useCallback(() => {
+  // 查看后端已自动创建的工单：仅跳转，不再 POST（避免重复建单）
+  const handleViewTicket = useCallback(() => navigate('/tickets'), [navigate]);
+
+  // 用户主动转人工：POST /api/ticket 建单后跳工单页。
+  // 从 store 读取最新问题/会话，避免闭包依赖 messages 使回调每次 delta 变化（保证 MessageBubble memo 生效）
+  const handleManualTicket = useCallback(() => {
+    const s = useChatStore.getState();
     const lastUserQ =
-      [...messages].reverse().find((m) => m.role === 'user')?.content ?? '用户请求人工协助';
+      [...s.messages].reverse().find((m) => m.role === 'user')?.content ?? '用户请求人工协助';
     createTicketMutate(
-      { question: lastUserQ, conversationId: storeConvId ?? undefined },
+      { question: lastUserQ, conversationId: s.conversationId ?? undefined },
       { onSuccess: () => navigate('/tickets') },
     );
-  }, [messages, storeConvId, createTicketMutate, navigate]);
+  }, [createTicketMutate, navigate]);
 
   const sidebar = (
     <>
@@ -254,7 +260,8 @@ export default function ChatPage() {
                   key={m.id}
                   message={m}
                   onFeedback={handleFeedback}
-                  onCreateTicket={m.ticketHint ? handleCreateTicket : undefined}
+                  onViewTicket={handleViewTicket}
+                  onManualTicket={handleManualTicket}
                 />
               ))
             )}

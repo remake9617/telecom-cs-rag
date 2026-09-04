@@ -16,7 +16,7 @@ interface Answer {
 function buildAnswer(question: string): Answer {
   if (/人工|投诉|转接|客服/.test(question)) {
     return {
-      text: '抱歉，这个问题我暂时无法给出准确答案。你可以**点击下方「转人工工单」**，客服会尽快为你处理。',
+      text: '这个问题需要人工客服跟进，**已为你自动创建工单**，可点击下方「查看工单」了解处理进度。',
       refs: [],
       hint: true,
     };
@@ -136,7 +136,21 @@ export const qaHandlers = [
           await sleep(18);
         }
         if (refs.length) send('reference', { references: refs });
-        if (hint) send('ticket_hint');
+        if (hint) {
+          // 模拟后端「自动建单」：写入 db.tickets 并推送 ticket_hint{conversationId,ticketId,autoCreated}
+          const ticketId = nextId();
+          db.tickets = [
+            {
+              id: ticketId,
+              question: question ?? '用户请求人工协助',
+              aiReason: '意图识别为转人工 (TICKET)',
+              status: 'OPEN',
+              createdAt: nowStr(),
+            },
+            ...db.tickets,
+          ];
+          send('ticket_hint', { conversationId: finalCid, ticketId, autoCreated: true });
+        }
 
         // 落库助手消息，并回传 done（messageId/conversationId/tokenCost）
         const assistantMsgId = nextId();

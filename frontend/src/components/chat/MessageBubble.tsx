@@ -5,6 +5,7 @@ import {
   CustomerServiceOutlined,
   DislikeFilled,
   DislikeOutlined,
+  FileDoneOutlined,
   LikeFilled,
   LikeOutlined,
   RobotOutlined,
@@ -24,10 +25,13 @@ const { Text } = Typography;
 interface Props {
   message: ChatMessage;
   onFeedback?: (messageId: number, type: FeedbackType) => void;
-  onCreateTicket?: () => void;
+  /** ticket_hint（后端已自动建单）→ 查看工单，跳转 /tickets（不再 POST 建单） */
+  onViewTicket?: () => void;
+  /** 用户主动转人工 → POST /api/ticket 建单 */
+  onManualTicket?: () => void;
 }
 
-function MessageBubble({ message, onFeedback, onCreateTicket }: Props) {
+function MessageBubble({ message, onFeedback, onViewTicket, onManualTicket }: Props) {
   const [feedback, setFeedback] = useState<FeedbackType | null>(null);
   const isUser = message.role === 'user';
   const isStreaming = !!message.streaming;
@@ -89,11 +93,34 @@ function MessageBubble({ message, onFeedback, onCreateTicket }: Props) {
 
           <ReferenceList references={message.references} />
 
-          {message.ticketHint && onCreateTicket && (
-            <div style={{ marginTop: 10 }}>
-              <Button size="small" icon={<CustomerServiceOutlined />} onClick={onCreateTicket}>
-                转人工工单
-              </Button>
+          {message.ticketHint && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: '8px 12px',
+                borderRadius: 8,
+                background: 'rgba(250,173,20,0.12)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+                flexWrap: 'wrap',
+              }}
+            >
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                已为你自动创建人工工单 #{message.ticketHint.ticketId}，客服会尽快跟进
+              </Text>
+              {onViewTicket && (
+                <Button
+                  size="small"
+                  type="primary"
+                  ghost
+                  icon={<FileDoneOutlined />}
+                  onClick={onViewTicket}
+                >
+                  查看工单 #{message.ticketHint.ticketId}
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -134,6 +161,19 @@ function MessageBubble({ message, onFeedback, onCreateTicket }: Props) {
             <Tooltip title="复制回答">
               <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopy} />
             </Tooltip>
+            {/* 手动转人工：仅在未自动建单（无 ticketHint）时展示，避免与已建工单重复 */}
+            {!message.ticketHint && onManualTicket && (
+              <Tooltip title="转人工客服">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<CustomerServiceOutlined />}
+                  onClick={onManualTicket}
+                >
+                  转人工
+                </Button>
+              </Tooltip>
+            )}
             {typeof message.tokenCost === 'number' && (
               <Tag bordered={false} style={{ marginInlineStart: 4 }}>
                 <Text type="secondary" style={{ fontSize: 12 }}>

@@ -1,6 +1,8 @@
-import type { Reference, StreamDoneInfo, StreamErrorInfo } from '@/types';
+import type { Reference, StreamDoneInfo, StreamErrorInfo, StreamTicketHint } from '@/types';
 import { getToken } from '@/utils/token';
 import { API_BASE_URL } from '@/config';
+import { notify } from '@/utils/notify';
+import { handleUnauthorized } from '@/utils/redirect';
 
 // SSE 流式问答：POST /api/qa/chat/stream，Content-Type: text/event-stream。
 // 为什么不用原生 EventSource：EventSource 只支持 GET、无法携带请求体，而本接口是 POST + JSON body，
@@ -18,7 +20,7 @@ export interface StreamHandlers {
   onReference: (refs: Reference[]) => void;
   onDone: (info: StreamDoneInfo) => void;
   onError: (err: StreamErrorInfo) => void;
-  onTicketHint?: () => void;
+  onTicketHint?: (info: StreamTicketHint) => void;
 }
 
 export interface ChatStreamPayload {
@@ -42,39 +44,35 @@ function parseEvent(raw: string): { event: string; data: string } {
   return { event, data: dataLines.join('\n') }; // 多行 data 以 \n 拼接
 }
 
-/** 按事件类型分发；data 为 JSON 字符串 */
-function dispatch(event: string, dataStr: string, h: StreamHandlers): void {
-  if (!dataStr) {
-    // ticket_hint 等可能无 data
-    if (event === 'ticket_hint') h.onTicketHint?.();
-    return;
-  }
+/** 按事件类型分发；data 为 JSON 字符串。返回 true 表示终止事件（done/error），调用方据此停止读取 */
+function dispatch(event: string, dataStr: string, h: StreamHandlers): boolean {
+  if (!dataStr) return false; // 无 data 的事件忽略（新契约下 ticket_hint 必带 data）
   let data: any;
   try {
     data = JSON.parse(dataStr);
   } catch {
     // data 非 JSON（极少见）：message 事件当纯文本兜底
     if (event === 'message') h.onDelta(dataStr);
-    return;
+    return false;
   }
   switch (event) {
     case 'message':
       h.onDelta(data.delta ?? '');
-      break;
+      return false;
     case 'reference':
       h.onReference((data.references ?? []) as Reference[]);
-      break;
+      return false;
+    case 'ticket_hint':
+      h.onTicketHint?.(data as StreamTicketHint);
+      return false;
     case 'done':
       h.onDone(data as StreamDoneInfo);
-      break;
+      return true; // 终止事件
     case 'error':
       h.onError(data as StreamErrorInfo);
-      break;
-    case 'ticket_hint':
-      h.onTicketHint?.();
-      break;
+      return true; // 终止事件
     default:
-      break; // 忽略未知事件，向前兼容后端扩展
+      return false; // 忽略未知事件，向前兼容后端扩展
   }
 }
 
@@ -101,6 +99,12 @@ export async function chatStream(
   });
 
   if (!res.ok) {
+    // 未认证（无/失效 token）：与 axios 拦截器一致——清登录态 + 跳登录
+    if (res.status === 401) {
+      notify.error('登录已过期，请重新登录');
+      handleUnauthorized();
+      return;
+    }
     // 尝试从后端 R<T> 错误体取 message，失败则用 HTTP 状态兜底
     let msg = `请求失败（HTTP ${res.status}）`;
     try {
@@ -133,11 +137,16 @@ export async function chatStream(
       const rawEvent = buffer.slice(0, idx);
       buffer = buffer.slice(idx + 2);
       const { event, data } = parseEvent(rawEvent);
-      dispatch(event, data, handlers);
+      if (dispatch(event, data, handlers)) {
+        // 收到 done/error 终止事件：主动 cancel 读取并返回。
+        // 因为后端/代理在 done 后未必及时关闭连接，继续 read() 会永久阻塞（已联调实测）。
+        await reader.cancel().catch(() => {});
+        return;
+      }
     }
   }
 
-  // flush 解码器与残余 buffer（最后一个事件可能未以 \n\n 收尾）
+  // 流自然结束但未收到 done/error：flush 解码器与残余 buffer
   buffer += decoder.decode();
   if (buffer.trim()) {
     const { event, data } = parseEvent(buffer);

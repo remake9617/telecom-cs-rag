@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { MessageRole, MessageVO, Reference, StreamDoneInfo } from '@/types';
+import type { MessageRole, MessageVO, Reference, StreamDoneInfo, StreamTicketHint } from '@/types';
 
 // 对话端「活跃会话」的单一数据源：消息列表 + 流式打字机缓冲。
 // 为什么用 Zustand 而非 TanStack Query：SSE 高频 delta 属瞬时客户端态，
@@ -22,8 +22,8 @@ export interface ChatMessage {
   status?: StreamStatus;
   /** 失败信息（status=error 时展示） */
   errorMsg?: string;
-  /** 是否收到 ticket_hint（展示「转人工」引导） */
-  ticketHint?: boolean;
+  /** ticket_hint 负载（后端已自动建单）：用于展示「查看工单 #ticketId」 */
+  ticketHint?: StreamTicketHint;
   /** done 事件返回的 token 消耗 */
   tokenCost?: number;
 }
@@ -51,8 +51,8 @@ interface ChatState {
   appendDelta: (tempId: string, delta: string) => void;
   /** 设置引用来源（reference 事件） */
   setReferences: (tempId: string, refs: Reference[]) => void;
-  /** 标记可转人工（ticket_hint 事件） */
-  markTicketHint: (tempId: string) => void;
+  /** 记录后端已自动建单的 ticket_hint（展示「查看工单 #ticketId」） */
+  markTicketHint: (tempId: string, info: StreamTicketHint) => void;
   /** 完成流式（done 事件）：落 messageId、结束 streaming */
   finishAssistant: (tempId: string, info: StreamDoneInfo) => void;
   /** 流式失败（error 事件或网络异常） */
@@ -127,8 +127,8 @@ export const useChatStore = create<ChatState>((set) => ({
   setReferences: (tempId, refs) =>
     set((s) => ({ messages: patchMessage(s.messages, tempId, { references: refs }) })),
 
-  markTicketHint: (tempId) =>
-    set((s) => ({ messages: patchMessage(s.messages, tempId, { ticketHint: true }) })),
+  markTicketHint: (tempId, info) =>
+    set((s) => ({ messages: patchMessage(s.messages, tempId, { ticketHint: info }) })),
 
   finishAssistant: (tempId, info) =>
     set((s) => ({

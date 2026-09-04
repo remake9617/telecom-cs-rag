@@ -54,7 +54,7 @@ public class AuthServiceImpl implements AuthService {
         user.setStatus(1);
         userMapper.insert(user);
         log.info("用户注册: id={}, username={}, role={}", user.getId(), username, ROLE_VISITOR);
-        return new LoginVO(jwtService.generate(user.getId(), username, ROLE_VISITOR), toVO(user));
+        return new LoginVO(jwtService.generate(user.getId(), username, ROLE_VISITOR), UserVO.from(user));
     }
 
     @Override
@@ -68,7 +68,7 @@ public class AuthServiceImpl implements AuthService {
             throw new BizException(ErrorCode.USER_DISABLED);
         }
         log.info("用户登录: id={}, username={}", user.getId(), username);
-        return new LoginVO(jwtService.generate(user.getId(), user.getUsername(), user.getRole()), toVO(user));
+        return new LoginVO(jwtService.generate(user.getId(), user.getUsername(), user.getRole()), UserVO.from(user));
     }
 
     @Override
@@ -77,15 +77,6 @@ public class AuthServiceImpl implements AuthService {
         if (user == null) {
             throw new BizException(ErrorCode.USER_NOT_FOUND);
         }
-        return toVO(user);
-    }
-
-    private UserVO toVO(SysUser user) {
-        UserVO vo = new UserVO();
-        vo.setId(user.getId());
-        vo.setUsername(user.getUsername());
-        vo.setNickname(user.getNickname());
-        vo.setRole(user.getRole());
-        return vo;
+        return UserVO.from(user);
     }
 }

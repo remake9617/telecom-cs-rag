@@ -12,7 +12,7 @@ export const authHandlers = [
     const { username, password } = (await request.json()) as { username: string; password: string };
     if (!username || !password) return fail(1001, '用户名和密码不能为空');
     if (db.users.some((u) => u.username === username)) return fail(5002, '用户名已存在');
-    const user: UserVO = { id: nextId(), username, nickname: username, role: 'USER' };
+    const user: UserVO = { id: nextId(), username, nickname: username, role: 'VISITOR' };
     db.users = [...db.users, user];
     setCurrentUser(user);
     return ok({ token: FAKE_TOKEN, user });
@@ -23,7 +23,7 @@ export const authHandlers = [
     if (!username || !password) return fail(1001, '用户名和密码不能为空');
     if (password === 'wrong') return fail(5001, '用户名或密码错误');
     const role: UserVO['role'] =
-      username === 'admin' ? 'ADMIN' : username.startsWith('agent') ? 'AGENT' : 'USER';
+      username === 'admin' ? 'ADMIN' : username.startsWith('agent') ? 'AGENT' : 'VISITOR';
     const nickname = username === 'admin' ? '系统管理员' : username;
     const user: UserVO = { id: 1, username, nickname, role };
     setCurrentUser(user);

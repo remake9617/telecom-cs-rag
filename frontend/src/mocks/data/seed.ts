@@ -16,9 +16,9 @@ import type {
 export const seedUsers: UserVO[] = [
   { id: 1, username: 'admin', nickname: '系统管理员', role: 'ADMIN' },
   { id: 2, username: 'agent01', nickname: '客服小王', role: 'AGENT' },
-  { id: 3, username: 'zhangsan', nickname: '张三', role: 'USER' },
-  { id: 4, username: 'lisi', nickname: '李四', role: 'USER' },
-  { id: 5, username: 'wangwu', nickname: '王五', role: 'USER' },
+  { id: 3, username: 'zhangsan', nickname: '张三', role: 'VISITOR' },
+  { id: 4, username: 'lisi', nickname: '李四', role: 'VISITOR' },
+  { id: 5, username: 'wangwu', nickname: '王五', role: 'VISITOR' },
 ];
 
 export const seedConversations: ConversationVO[] = [

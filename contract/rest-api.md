@@ -83,7 +83,8 @@ data: {"messageId":123,"conversationId":45,"tokenCost":850}
 event: error                          # 出错时（替代 done）
 data: {"code":3002,"message":"模型调用失败"}
 ```
-- 兜底：若检索为空/低置信，`event: message` 推送引导话术，并附 `event: ticket_hint` 提示可转人工。
+- **转人工（TICKET 意图 / 检索为空兜底）**：后端**自动创建工单**并推 `event: ticket_hint`，data = `{conversationId, ticketId, autoCreated:true}`。前端据此显示「查看工单 #ticketId」并跳转工单页，**不要再 POST /api/ticket**（后端已建单，避免重复）。
+- `POST /api/ticket` 仅用于用户**主动**转人工（非 AI 自动判定）的场景，如答案旁的「转人工」按钮。
 
 ---
 

@@ -18,6 +18,28 @@
             <groupId>com.cs</groupId>
             <artifactId>cs-framework</artifactId>
         </dependency>
-        <!-- Spring Security + JWT + MyBatis-Plus 于 M3 认证实现时引入 -->
+        <!-- 用户/反馈落库（MySQL，M3） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        </dependency>
+        <!-- Spring Security（M3 认证收口）：过滤器链对所有 /api/** 生效 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <!-- JWT 签发/校验（D17） -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+        </dependency>
     </dependencies>
 </project>

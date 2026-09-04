@@ -10,7 +10,7 @@
 - **BaseURL**：`/api`
 - **分页**：请求 `?current=1&size=10`；响应 `data = { records:[], total, current, size }`
 - **时间格式**：`yyyy-MM-dd HH:mm:ss`（东八区）
-- **错误**：非 0 的 `code` + `message`，HTTP 状态码统一 200（业务错误看 code）；未认证 401、无权限 403 例外
+- **错误**：非 0 的 `code` + `message`，HTTP 状态码统一 200（业务错误看 code）。**认证/授权例外**：未认证（无 token 或 token 失效）→ **HTTP 401**（前端据此跳登录）；已认证但角色不足 → **HTTP 200 + code=1003**（前端提示“无权限”，不跳登录）
 
 ---
 
@@ -60,6 +60,11 @@
 | GET | `/api/stats/overview` | — | `{askCount, resolveRate, ticketRate, ...}` | 概览看板 |
 | GET | `/api/stats/hot-questions` | `?limit=10` | `[{question, count}]` | 热点问题 |
 | GET | `/api/stats/trend` | `?days=7` | `[{date, askCount, resolveCount}]` | 趋势 |
+
+## 7. 系统管理 `/api/system`（cs-system，管理员）
+| 方法 | 路径 | 入参 | 出参 data | 说明 |
+|---|---|---|---|---|
+| GET | `/api/system/users` | `?current=&size=&keyword=` | `PageVO<UserVO>` | 用户列表（仅 ADMIN；keyword 按用户名/昵称模糊搜索）|
 
 ---
 

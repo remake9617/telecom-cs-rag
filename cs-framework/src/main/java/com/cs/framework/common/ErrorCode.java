@@ -49,7 +49,9 @@ public enum ErrorCode {
     // ---------- 5xxx 系统 / 统计 ----------
     USER_NOT_FOUND(5001, "用户不存在"),
     USERNAME_EXISTS(5002, "用户名已存在"),
-    PASSWORD_ERROR(5003, "用户名或密码错误");
+    PASSWORD_ERROR(5003, "用户名或密码错误"),
+    USER_DISABLED(5004, "用户已禁用"),
+    MESSAGE_NOT_FOUND(5005, "消息不存在");
 
     private final int code;
     private final String message;

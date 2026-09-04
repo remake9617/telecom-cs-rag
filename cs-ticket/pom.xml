@@ -18,6 +18,10 @@
             <groupId>com.cs</groupId>
             <artifactId>cs-framework</artifactId>
         </dependency>
-        <!-- MyBatis-Plus 于 M3 工单实现时引入 -->
+        <!-- 工单元数据落库（MySQL，M3） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        </dependency>
     </dependencies>
 </project>

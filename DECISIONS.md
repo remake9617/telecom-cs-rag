@@ -130,6 +130,31 @@
 - **被放弃的方案**：Boot 4.x + Spring AI 2.0 + Alibaba 2.0.0-M1（里程碑版不稳、追新风险高）、Boot 3.4.x + Spring AI 1.0.0 + Alibaba 1.0.0.2（更老、功能少、非新项目推荐）、沿用原 D11 错配组合（编译期依赖冲突）。
 - **日期**：2026-09-03
 
+## D21. 多会话协作模式 = 统筹会话 + 各开发路独立会话 + 提示词约束
+- **决策**：主会话（本会话）做统筹——维护全局设计/契约、规划里程碑、为各路拟定角色提示词、协调模块边界、负责集成联调、审校汇总阶段汇报；前端(路4)、M3(路3)及阶段二各模块分别开独立会话开发，每会话用专门提示词（docs/prompts/pathX-*.md）固化角色/边界/契约/记录文档要求。
+- **理由**：各会话上下文专注不超载；统筹保全局一致性与集成质量；提示词防止越界改代码与契约漂移；落实 D18 的阶段B并行+集成者策略。
+- **被放弃的方案**：单会话串行做全部（上下文超载、进度慢）、多会话但无统筹无提示词（易越界冲突、契约各自漂移）。
+- **日期**：2026-09-04
+
+## D22. M3 认证实现 = jjwt 0.12.6 + 手动查库 + BCrypt 校验
+- **决策**：JWT 库选 jjwt 0.12.6（api/impl/jackson 三构件，版本根 pom 管理）；登录不走 DaoAuthenticationProvider/UserDetailsService 体系，改为 AuthService 手动查库 + `BCryptPasswordEncoder.matches`，错误码一一映射（5002 重名 / 5003 密码错 / 5004 禁用）；登录失败统一 5003「用户名或密码错误」防用户名枚举。HS256 对称签名，秘钥走环境变量 JWT_SECRET，有效期 24h。
+- **理由**：jjwt 是 JVM 生态最广用的 JWT 库、API 类型安全、无依赖膨胀；本系统用户体量小且单角色字段，UserDetailsService 体系会把「不存在/禁用/密码错」压进 AuthenticationException 继承树，业务错误码反而难对应；手动流程直白可控、答辩可讲性强。
+- **被放弃的方案**：Sa-Token（D17 已否）、auth0 java-jwt（资料少于 jjwt）、自签自验（密码学细节易错）、DaoAuthenticationProvider 全套（MVP 场景过度抽象）。
+- **日期**：2026-09-04
+
+## D23. M3 RBAC = 编程式 SecurityUtils.requireAdmin() + 开发期默认用户过渡
+- **决策**：接口角色校验用 cs-framework 的 `SecurityUtils.requireAdmin()`（编程式），RBAC 拒绝返回 HTTP 200 + code=1003（R 体系）；HTTP 401 留给过滤器链（未认证），RestAccessDeniedHandler 保留 HTTP 403（当前不触发）。认证收口前 SecurityUtils 回退开发默认用户 {id=1, ADMIN}，认证上线后由 JwtAuthenticationFilter 写入真实上下文自动覆盖；默认管理员由 AdminSeeder 首次启动播种（BCrypt，幂等）。
+- **理由**：错误码统一走 R 体系，前端只需一套处理逻辑；避免 cs-ticket/cs-stats 为用 @PreAuthorize 而引 spring-security 依赖扩散；回退默认用户让工单/反馈/统计先于认证可端到端自测且角色校验逻辑一次写对（受保护接口匿名请求进不了 Controller，回退不会绕过鉴权）。
+- **被放弃的方案**：@PreAuthorize + @EnableMethodSecurity（校验失败抛 AccessDeniedException，要么被兜底成 1999 要么需额外 MVC handler，且依赖扩散）；URL 级 hasRole()（粒度粗）；先上鉴权再写业务（每步被阻塞）。
+- **待确认**：契约字面「无权限 403」与实现「HTTP 200 + code=1003」的口径差异，交统筹会话与前端对齐确认（未单方面改契约）。
+- **日期**：2026-09-04
+
+## D24. M3 统计口径与实现 = 实时聚合 SQL + 每日快照归档双轨
+- **决策**：指标口径：咨询量 = chat_message(role=user) 消息数；解决率 = LIKE/(LIKE+DISLIKE)（无样本返回 null，不硬造 0%）；转人工率 = 工单数/咨询量；热点问题 = user 消息按内容分组 TopN；趋势按天聚合且缺数日补零。实现：cs-stats 用 @Select 聚合 SQL 只读直查 chat_message/ticket/feedback（不依赖对方模块 Service，守依赖方向）；另加 stat_snapshot 每日 00:05 幂等快照（uk_date 覆盖更新）供历史回看与阶段二评估。
+- **理由**：统计是读侧场景，表级只读是数仓/统计模块常规边界；MVP 单机 MySQL 聚合毫秒级无需 OLAP；实时接口保证演示数据新鲜，快照为阶段二 RAG 评估体系留时序数据。
+- **被放弃的方案**：依赖 cs-qa/cs-ticket Service（破坏依赖方向或需接口下沉）；只读快照（当天数据缺失，演示体验差）；ES 聚合热点（阶段二增强：ik 分词后按词根统计比整句 group by 更准）。
+- **日期**：2026-09-04
+
 ---
 
 ## 待拍板 / 待补充（后续追加）

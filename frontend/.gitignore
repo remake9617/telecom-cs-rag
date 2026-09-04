@@ -1,0 +1,23 @@
+# 依赖与构建产物
+node_modules
+dist
+dist-ssr
+*.local
+
+# 环境变量（不含密钥，但按惯例忽略；模板 .env.example 保留）
+.env
+.env.*
+!.env.example
+
+# 日志与编辑器
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.DS_Store
+.idea
+.vscode/*
+!.vscode/extensions.json
+
+# MSW worker 由 `npm run msw:init` 生成，纳入版本管理以便部署预览可复用
+!public/mockServiceWorker.js

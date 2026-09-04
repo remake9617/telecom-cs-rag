@@ -26,5 +26,20 @@
             <groupId>com.cs</groupId>
             <artifactId>cs-knowledge</artifactId>
         </dependency>
+        <!-- 集成接线（统筹）：TICKET 意图/无召回兑底时调 TicketService 建工单 -->
+        <dependency>
+            <groupId>com.cs</groupId>
+            <artifactId>cs-ticket</artifactId>
+        </dependency>
+        <!-- 会话/消息/引用落库（MySQL） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        </dependency>
+        <!-- 会话短期记忆（Redis，最近 N 轮） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
     </dependencies>
 </project>

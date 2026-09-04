@@ -30,6 +30,13 @@ spring:
     password: ${MYSQL_ROOT_PASSWORD:cs_root_123}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
+  # ===== Redis（VM 内，会话记忆/限流/缓存，宿主端口 16379）=====
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:16379}
+      timeout: 5s
+
   ai:
     # ===== 指定各能力的模型 provider（多 starter 共存时避免 bean 冲突）=====
     # Chat 用 dashscope(qwen-plus)；Embedding 用 openai 兼容(硅基流动 bge-m3)
@@ -79,7 +86,18 @@ mybatis-plus:
     db-config:
       id-type: auto                      # 主键自增（对齐 schema.sql 的 AUTO_INCREMENT）
 
+# ===== 认证（M3：Spring Security + JWT，D17）=====
+# JWT 秘钥走环境变量 JWT_SECRET（绝不能入库）；HS256 要求 >= 32 字节
+cs:
+  jwt:
+    secret: ${JWT_SECRET:dev-only-cs-server-jwt-secret-key-change-me-in-prod}
+    expire-hours: 24                     # token 有效期（小时）
+  # 默认管理员初始密码（仅首次启动播种时生效，公网部署前务必改）
+  admin:
+    default-password: ${ADMIN_DEFAULT_PASSWORD:admin123}
+
 # ===== 说明 =====
-# 1) 本文件为 M0 骨架基础配置；MySQL / Redis 连接待 M1/M3 引入 mybatis-plus、redis starter 时补充。
-# 2) 所有密钥走环境变量：AI_DASHSCOPE_API_KEY、SILICONFLOW_API_KEY，切勿硬编码或提交入库。
+# 1) 本文件为 M0 骨架基础配置；M1 补 ES/MySQL、M2 补 Redis/会话记忆、M3 补 MyBatis-Plus 分页与 JWT 认证。
+# 2) 所有密钥走环境变量：AI_DASHSCOPE_API_KEY、SILICONFLOW_API_KEY、JWT_SECRET，切勿硬编码或提交入库。
 # 3) 编译验证（mvn clean compile）不需要中间件；启动验证需 VM 内 MySQL/ES/Redis 就绪 + 填入 API Key。
+# 4) 认证放行清单（SecurityConfig）：/api/auth/register、/api/auth/login、/api/health/**；其余 /api/** 需 Bearer token（含 SSE）

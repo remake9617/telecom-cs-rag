@@ -7,6 +7,12 @@ server:
       force: true
 
 spring:
+  config:
+    import:
+      # 读取项目根 .env（API Key、VM 中间件地址）；optional 表示文件不存在也不报错
+      # 同时尝试当前目录与上级目录，兼容工作目录为项目根或 cs-bootstrap 两种情况
+      - optional:file:.env[.properties]
+      - optional:file:../.env[.properties]
   application:
     name: cs-server
 
@@ -18,6 +24,11 @@ spring:
     socket-timeout: 30s
 
   ai:
+    # ===== 指定各能力的模型 provider（多 starter 共存时避免 bean 冲突）=====
+    # Chat 用 dashscope(qwen-plus)；Embedding 用 openai 兼容(硅基流动 bge-m3)
+    model:
+      chat: dashscope
+      embedding: openai
     # ===== Spring AI 向量存储（ES）：chunk 索引，bge-m3 = 1024 维，cosine =====
     vectorstore:
       elasticsearch:

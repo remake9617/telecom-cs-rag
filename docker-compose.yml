@@ -15,7 +15,7 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-cs_db}
       TZ: Asia/Shanghai
     ports:
-      - "3306:3306"
+      - "13306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
       # 首次启动自动执行初始化脚本（建表 schema 放 ./sql/init/*.sql）
@@ -63,7 +63,7 @@ services:
     container_name: cs-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "16379:6379"
     volumes:
       - redis-data:/data
     command: ["redis-server", "--appendonly", "yes"]

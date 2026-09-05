@@ -69,7 +69,7 @@ export default function MyTickets() {
                     <div style={{ marginTop: 4 }}>
                       <Text type="secondary" style={{ fontSize: 12 }}>
                         提交于 {formatDateTime(t.createdAt)}
-                        {t.aiReason ? `　·　转人工原因：${t.aiReason}` : ''}
+                        {t.aiReason ? ` · 转人工原因：${t.aiReason}` : ''}
                       </Text>
                     </div>
                     {t.reply && (

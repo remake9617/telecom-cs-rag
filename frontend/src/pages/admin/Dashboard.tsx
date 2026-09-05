@@ -96,7 +96,7 @@ export default function Dashboard() {
       </Row>
 
       <Text type="secondary" style={{ display: 'block', marginTop: 12, fontSize: 12 }}>
-        说明：指标口径来自 /api/stats（cs-stats）。当前为 Mock 数据，联调后自动切换真实统计。
+        说明：指标口径来自 /api/stats（cs-stats）。咨询量 = chat_message 中 role='user' 的消息数；解决率 = LIKE / (LIKE + DISLIKE)，无样本时为 null 故显示「-」（D24：不硬造 0%）；转人工率 = 工单数 / 咨询量。
       </Text>
     </div>
   );

@@ -1,9 +1,9 @@
-import { lazy, Suspense, type ReactNode } from 'react';
+import { lazy } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
-import { Spin } from 'antd';
 import AppLayout from '@/components/layout/AppLayout';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { RequireAuth, RequireRole } from './guards';
+import { SuspensePage } from './SuspensePage';
 
 // 路由表：按角色分区（用户端 / 管理后台），页面全部懒加载以做代码分割。
 
@@ -17,15 +17,6 @@ const Documents = lazy(() => import('@/pages/admin/Documents'));
 const TicketAdmin = lazy(() => import('@/pages/admin/TicketAdmin'));
 const Users = lazy(() => import('@/pages/admin/Users'));
 const NotFound = lazy(() => import('@/pages/NotFound'));
-
-/** 懒加载页面的统一 Suspense 兜底 */
-function SuspensePage({ children }: { children: ReactNode }) {
-  return (
-    <Suspense fallback={<div style={{ padding: 48, textAlign: 'center' }}><Spin size="large" /></div>}>
-      {children}
-    </Suspense>
-  );
-}
 
 export const router = createBrowserRouter([
   { path: '/login', element: <SuspensePage><Login /></SuspensePage> },

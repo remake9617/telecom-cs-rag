@@ -60,11 +60,11 @@ export const seedKbs: KnowledgeBaseVO[] = [
 ];
 
 export const seedDocuments: DocumentVO[] = [
-  { id: 1, kbId: 1, title: '5G套餐资费.md', sourceType: 'FILE', fileType: 'md', chunkCount: 42, status: 'DONE', createdAt: '2026-09-01 09:20:11' },
-  { id: 2, kbId: 1, title: '优惠政策FAQ.docx', sourceType: 'FILE', fileType: 'docx', chunkCount: 18, status: 'DONE', createdAt: '2026-09-01 11:02:45' },
-  { id: 3, kbId: 2, title: '宽带报障指引.pdf', sourceType: 'FILE', fileType: 'pdf', chunkCount: 27, status: 'DONE', createdAt: '2026-09-02 14:31:09' },
-  { id: 4, kbId: 2, title: '中国电信宽带装维页', sourceType: 'URL', fileType: 'url', chunkCount: 0, status: 'PROCESSING', createdAt: '2026-09-04 08:55:30' },
-  { id: 5, kbId: 1, title: '校园套餐说明.md', sourceType: 'FILE', fileType: 'md', chunkCount: 0, status: 'FAILED', createdAt: '2026-09-03 16:10:02' },
+  { id: 1, kbId: 1, title: '5G套餐资费.md', sourceType: 'UPLOAD', fileType: 'MD', chunkCount: 42, status: 'DONE', createdAt: '2026-09-01 09:20:11' },
+  { id: 2, kbId: 1, title: '优惠政策FAQ.docx', sourceType: 'UPLOAD', fileType: 'WORD', chunkCount: 18, status: 'DONE', createdAt: '2026-09-01 11:02:45' },
+  { id: 3, kbId: 2, title: '宽带报障指引.pdf', sourceType: 'UPLOAD', fileType: 'PDF', chunkCount: 27, status: 'DONE', createdAt: '2026-09-02 14:31:09' },
+  { id: 4, kbId: 2, title: '中国电信宽带装维页', sourceType: 'URL', fileType: 'HTML', chunkCount: 0, status: 'PROCESSING', createdAt: '2026-09-04 08:55:30' },
+  { id: 5, kbId: 1, title: '校园套餐说明.md', sourceType: 'UPLOAD', fileType: 'MD', chunkCount: 0, status: 'FAILED', createdAt: '2026-09-03 16:10:02' },
 ];
 
 export const seedTickets: TicketVO[] = [

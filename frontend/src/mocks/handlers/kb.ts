@@ -21,7 +21,7 @@ export const kbHandlers = [
 
   http.post('*/api/kb/bases', async ({ request }) => {
     const body = (await request.json()) as { name?: string; description?: string };
-    if (!body.name) return fail(2001, '知识库名称不能为空');
+    if (!body.name) return fail(1001, '知识库名称不能为空');
     const kb: KnowledgeBaseVO = {
       id: nextId(),
       name: body.name,

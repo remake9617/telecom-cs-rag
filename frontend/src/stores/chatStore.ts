@@ -93,6 +93,7 @@ export const useChatStore = create<ChatState>((set) => ({
         content: m.content,
         references: m.references,
         createdAt: m.createdAt,
+        tokenCost: m.tokenCost,
         status: 'done',
       })),
     }),

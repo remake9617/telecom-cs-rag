@@ -5,7 +5,7 @@ export interface R<T> {
   code: number;
   message: string;
   data: T;
-  timestamp: string;
+  timestamp: number | string; // 后端 R.java 为 long（毫秒时间戳）；前端零读取点，声明兼容两种形态
   traceId: string;
 }
 

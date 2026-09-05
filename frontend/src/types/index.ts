@@ -31,6 +31,8 @@ export interface MessageVO {
   content: string;
   references?: Reference[];
   createdAt: string;
+  /** token 消耗（后端已随 MessageVO 补发；DashScope 未回传 usage 时为 null/缺失，故可选） */
+  tokenCost?: number;
 }
 
 export interface ConversationVO {
@@ -40,17 +42,20 @@ export interface ConversationVO {
 }
 
 /**
- * 文档 VO。status/sourceType/fileType 后端未冻结枚举，这里用 string 承载，
- * UI 侧用映射表兜底展示，避免后端取值差异导致前端崩溃。
+ * 文档 VO。status/sourceType/fileType 后端已冻结为大写枚举，这里用 string 承载，
+ * UI 侧用映射表兜底展示，避免后端取值差异导致前端崩溃。已冻结枚举：
+ * - status：PENDING | PROCESSING | DONE | FAILED
+ * - sourceType：UPLOAD | URL
+ * - fileType：MD | TXT | PDF | WORD | EXCEL | HTML
  */
 export interface DocumentVO {
   id: number;
   kbId: number;
   title: string;
-  sourceType: string; // FILE / URL
-  fileType: string; // md / pdf / docx / url ...
+  sourceType: string; // UPLOAD / URL
+  fileType: string; // MD / TXT / PDF / WORD / EXCEL / HTML
   chunkCount: number;
-  status: string; // 入库状态：PENDING / PROCESSING / DONE / FAILED 等
+  status: string; // 入库状态：PENDING / PROCESSING / DONE / FAILED
   createdAt: string;
 }
 
@@ -83,11 +88,13 @@ export interface TicketVO {
 
 // ---------- 统计看板 ----------
 
-/** 概览看板：契约以 ... 表示可扩展，除核心三项外补充常见字段（均可选） */
+/** 概览看板：字段严格对齐后端 OverviewVO（avgTokenCost 归阶段二，前端暂未消费，保留可选） */
 export interface StatsOverview {
   askCount: number;
-  resolveRate: number;
-  ticketRate: number;
+  // D24：无样本时后端返回 null（不硬造 0%），故为 number | null，UI 用 formatPercent 兜底显示「-」
+  resolveRate: number | null;
+  ticketRate: number | null;
+  openTicketCount?: number;
   userCount?: number;
   docCount?: number;
   kbCount?: number;
@@ -107,7 +114,7 @@ export interface TrendPoint {
 
 // ---------- SSE 事件负载 ----------
 
-/** event: done 负载（实测后端当前不含 tokenCost，故置为可选；缺失时前端不展示 token 标签） */
+/** event: done 负载（后端已补发 tokenCost，取不到时为 null；保留可选以防御异常路径漏发，缺失时前端不展示 token 标签） */
 export interface StreamDoneInfo {
   messageId: number;
   conversationId: number;

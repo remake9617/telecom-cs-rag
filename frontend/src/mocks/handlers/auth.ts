@@ -21,7 +21,7 @@ export const authHandlers = [
   http.post('*/api/auth/login', async ({ request }) => {
     const { username, password } = (await request.json()) as { username: string; password: string };
     if (!username || !password) return fail(1001, '用户名和密码不能为空');
-    if (password === 'wrong') return fail(5001, '用户名或密码错误');
+    if (password === 'wrong') return fail(5003, '用户名或密码错误');
     const role: UserVO['role'] =
       username === 'admin' ? 'ADMIN' : username.startsWith('agent') ? 'AGENT' : 'VISITOR';
     const nickname = username === 'admin' ? '系统管理员' : username;

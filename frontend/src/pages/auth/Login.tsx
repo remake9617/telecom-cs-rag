@@ -4,6 +4,7 @@ import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { authApi } from '@/api';
 import { useAuthStore } from '@/stores/authStore';
+import { USE_MOCK } from '@/config';
 
 const { Title, Text } = Typography;
 
@@ -57,17 +58,19 @@ export default function Login() {
           <Text type="secondary">基于 RAG 的运营商智能问答系统</Text>
         </Space>
 
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 16 }}
-          message="演示账号（Mock）"
-          description={
-            <Text style={{ fontSize: 12 }}>
-              管理员：admin / 任意密码　·　访客：任意用户名 / 任意密码　·　错误演示：密码填 wrong
-            </Text>
-          }
-        />
+        {USE_MOCK && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="演示账号（Mock）"
+            description={
+              <Text style={{ fontSize: 12 }}>
+                管理员：admin / 任意密码 · 访客：任意用户名 / 任意密码 · 错误演示：密码填 wrong
+              </Text>
+            }
+          />
+        )}
 
         <Form<LoginForm> layout="vertical" onFinish={onFinish} requiredMark={false}>
           <Form.Item name="username" rules={[{ required: true, message: '请输入用户名' }]}>

@@ -2,7 +2,7 @@ import { http } from 'msw';
 import { page } from './_helpers';
 import { db } from '../db';
 
-// 用户管理 Mock（端点为提案，未在 rest-api.md 冻结，详见 api/modules/system.ts）。
+// 用户管理 Mock（契约见 rest-api.md 第 7 节，与 api/modules/system.ts 一致）。
 export const systemHandlers = [
   http.get('*/api/system/users', ({ request }) => {
     const url = new URL(request.url);

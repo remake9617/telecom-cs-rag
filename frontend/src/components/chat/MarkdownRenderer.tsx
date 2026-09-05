@@ -19,6 +19,8 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content }: Props) {
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
         components={{
+          // node 由 react-markdown 注入，但不应落到 DOM <a>；解构剔除后再展开其余 props，故 node 刻意不使用。
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           a: ({ node, ...props }) => <a {...props} target="_blank" rel="noreferrer noopener" />,
         }}
       >

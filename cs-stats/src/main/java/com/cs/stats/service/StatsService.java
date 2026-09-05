@@ -15,7 +15,12 @@ import java.util.List;
  */
 public interface StatsService {
 
-    /** 概览：咨询量 / 解决率 / 转人工率 / 待处理工单 */
+    /**
+     * 概览：咨询量 / 解决率 / 转人工率 / 待处理工单 / 知识库数 / 文档数 / 用户数。
+     *
+     * <p>字段口径与可空性见 {@link OverviewVO}（resolveRate 无样本时返回 null，
+     * 不硬造 0%；前端据此展示“-”）。</p>
+     */
     OverviewVO overview();
 
     /** 热点问题 TopN */

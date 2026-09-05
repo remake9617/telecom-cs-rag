@@ -8,24 +8,28 @@ import org.springframework.security.core.context.SecurityContextHolder;
 /**
  * 认证上下文工具 —— 业务代码获取当前登录用户的唯一入口（并行开发公共契约）。
  *
- * <p>设计要点（M3-report 有详细说明）：</p>
+ * <p>设计要点：</p>
  * <ul>
  *   <li>封装 SecurityContextHolder，业务模块无需直接依赖 Spring Security API；</li>
- *   <li>跨模块约定：cs-qa 的 QaController 后续由统筹会话集成时改用
- *       {@link #requireUserId()} 取真实 userId（替代现在的默认 userId=1）；</li>
- *   <li><b>开发期过渡</b>：M3 认证收口前，工单/反馈/统计接口需要可端到端自测，
- *       因此未认证时回退到 {@link #DEV_FALLBACK_USER}（id=1, role=ADMIN）。
- *       认证上线后，受保护接口必须携带 JWT 才能通过过滤器链，匿名请求根本到不了
- *       Controller，此回退仅对放行接口（注册/登录/health）生效，不会绕过鉴权。</li>
+ *   <li>受保护端点调用 {@link #requireUserId()} 或 {@link #requireAdmin()} 时，
+ *       若 SecurityContext 无有效认证信息则直接抛 {@link BizException}（1002），
+ *       不再提供任何开发期回退。</li>
+ * </ul>
+ *
+ * <p><b>安全性论证（移除 DEV_FALLBACK_USER 的依据）：</b></p>
+ * <ul>
+ *   <li>SecurityConfig 放行清单仅包含 4 条路径：{@code /api/auth/register}、
+ *       {@code /api/auth/login}、{@code /api/health/ping}、{@code /error}。
+ *       这 4 个端点的 Controller 方法均<b>不调用</b> SecurityUtils，
+ *       因此放行路径不会触发未认证异常。</li>
+ *   <li>保留回退的风险：一旦将来某端点漏配 Security（permitAll 误配），
+ *       该端点会静默以 {@code id=1, role=ADMIN} 执行，等同于全权限匿名访问，
+ *       属严重安全隐患。</li>
+ *   <li>移除回退后，漏配 Security 的端点会立即暴露为 1002 异常，
+ *       开发者在联调阶段即可发现配置遗漏，fail-fast 优于 silent-fallback。</li>
  * </ul>
  */
 public final class SecurityUtils {
-
-    /**
-     * 开发期回退用户（与 M2 QaService.DEFAULT_USER_ID 对齐：id=1）。
-     * TODO(M3-集成)：认证收口联调通过后，如需严格模式可删除回退逻辑。
-     */
-    public static final LoginUser DEV_FALLBACK_USER = new LoginUser(1L, "dev-admin", "ADMIN");
 
     private SecurityUtils() {
     }
@@ -42,22 +46,36 @@ public final class SecurityUtils {
     }
 
     /**
-     * 取当前用户 ID；未认证时回退开发默认用户（见类注释），保证认证收口前接口可自测。
+     * 取当前用户 ID；未认证时直接抛 1002（UNAUTHORIZED）。
+     *
+     * <p>调用方为受保护端点（需 JWT），JwtAuthenticationFilter 已保证
+     * 合法请求到达此处时 SecurityContext 非空。</p>
+     *
+     * @return 当前登录用户 ID
+     * @throws BizException 1002 未认证或登录已过期
      */
     public static Long requireUserId() {
         LoginUser user = getCurrentUser();
-        return user != null ? user.getUserId() : DEV_FALLBACK_USER.getUserId();
+        if (user == null) {
+            throw new BizException(ErrorCode.UNAUTHORIZED);
+        }
+        return user.getUserId();
     }
 
     /**
-     * 校验当前用户是管理员，否则抛 1003（无权访问）。
-     * 未认证（开发期）回退用户角色为 ADMIN，视为放行——认证上线后匿名请求
-     * 已被过滤器链拦截，不会走到这里。
+     * 校验当前用户是管理员；未认证抛 1002，非管理员抛 1003。
+     *
+     * <p>调用方为管理类端点（统计看板、系统设置、AI 健康探测等），
+     * 前端通过菜单权限控制入口可见性，后端通过本方法做最终防线。</p>
+     *
+     * @throws BizException 1002 未认证 或 1003 无权访问
      */
     public static void requireAdmin() {
         LoginUser user = getCurrentUser();
-        String role = user != null ? user.getRole() : DEV_FALLBACK_USER.getRole();
-        if (!"ADMIN".equals(role)) {
+        if (user == null) {
+            throw new BizException(ErrorCode.UNAUTHORIZED);
+        }
+        if (!"ADMIN".equals(user.getRole())) {
             throw new BizException(ErrorCode.FORBIDDEN, "该操作仅管理员可用");
         }
     }

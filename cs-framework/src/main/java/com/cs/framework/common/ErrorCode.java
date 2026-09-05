@@ -36,6 +36,8 @@ public enum ErrorCode {
     DOC_PARSE_FAIL(2003, "文档解析失败"),
     DOC_UNSUPPORTED_TYPE(2004, "不支持的文档类型"),
     EMBEDDING_FAIL(2005, "向量化失败"),
+    DOC_REINDEX_UNSUPPORTED(2006, "该文档缺少可重建的索引数据"),
+    DOC_DELETE_FAILED(2007, "文档删除失败"),
 
     // ---------- 3xxx 检索 / 问答 ----------
     RETRIEVAL_EMPTY(3001, "未检索到相关内容"),

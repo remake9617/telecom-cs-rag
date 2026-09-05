@@ -19,7 +19,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  * <p><b>放行清单</b>（与前端/统筹会话对齐的关键契约，M3-report 详述）：</p>
  * <ul>
  *   <li>/api/auth/register、/api/auth/login —— 注册登录本身不能要求登录；</li>
- *   <li>/api/health/** —— 存活探针；</li>
+ *   <li>/api/health/ping —— 无认证存活探针（不发起模型调用，为容器 healthcheck 预留）；</li>
  *   <li>/error —— Spring Boot 错误页转发，不放行会把真实错误包装成 401，排障困难；</li>
  *   <li>其余 /api/** 一律 authenticated；<b>SSE /api/qa/chat/stream 不放行</b>：
  *       前端用 fetch 携带 Authorization 头，标准过滤器链自然生效。</li>
@@ -56,7 +56,7 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/auth/register",
                                 "/api/auth/login",
-                                "/api/health/**",
+                                "/api/health/ping",
                                 "/error"
                         ).permitAll()
                         .anyRequest().authenticated())

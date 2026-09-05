@@ -3,6 +3,7 @@ package com.cs.qa.service;
 import com.cs.knowledge.dto.RetrievedChunk;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
@@ -41,17 +42,27 @@ public class AnswerGenerateService {
     /**
      * 流式生成 grounded 答案。
      *
+     * <p><b>为什么返回 {@code Flux<ChatResponse>} 而非 {@code Flux<String>}：</b>
+     * 纯文本流丢失了 token 用量信息。DashScope 在流式模式下会在<b>最后一个 chunk</b>
+     * 的 {@code ChatResponse.getMetadata().getUsage()} 里回传累计 token，只有拿到
+     * {@link ChatResponse} 才能提取 usage 并写入 {@code chat_message.token_cost}，
+     * 修复「流式结束显示 N tokens、刷新后标签消失」。文本分片由调用方从
+     * {@code response.getResult().getOutput().getText()} 提取。</p>
+     *
+     * <p><b>system prompt 与 grounding 约束（含引用编号 [n] 要求）保持完全不变</b>，
+     * 仅将 {@code .stream().content()} 改为 {@code .stream().chatResponse()}（Spring AI 1.1.2 方法名）。</p>
+     *
      * @param query  用户问题（重写后）
      * @param chunks 检索到的参考资料（已 rerank 排序）
-     * @return 流式文本片段
+     * @return 流式 {@link ChatResponse}（逐 chunk），调用方自取文本与 usage
      */
-    public Flux<String> generateStream(String query, List<RetrievedChunk> chunks) {
+    public Flux<ChatResponse> generateStream(String query, List<RetrievedChunk> chunks) {
         String userPrompt = buildUserPrompt(query, chunks);
         return chatClient.prompt()
                 .system(SYSTEM_PROMPT)
                 .user(userPrompt)
                 .stream()
-                .content();
+                .chatResponse();
     }
 
     /** 组装 user prompt：带序号的参考资料 + 用户问题 */

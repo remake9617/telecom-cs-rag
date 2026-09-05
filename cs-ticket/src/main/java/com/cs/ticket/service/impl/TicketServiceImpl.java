@@ -44,6 +44,12 @@ public class TicketServiceImpl implements TicketService {
         ticket.setQuestion(question);
         ticket.setAiReason(aiReason);
         ticket.setStatus(STATUS_OPEN);
+        // 【坑，会反复踩】为什么在这里显式赋 createdAt，而不靠 ticket.created_at 的
+        // DEFAULT CURRENT_TIMESTAMP：MyBatis-Plus 的 insert 只回填自增主键，不会回读
+        // 数据库生成的列默认值，所以 insert 之后 ticket.getCreatedAt() 仍为 null；
+        // 即使 Controller 补上 vo.setCreatedAt(ticket.getCreatedAt()) 也拿不到值（DEF-017）。
+        // 应用侧赋值与 DB 默认值同为服务器本地时间，口径一致，且避免为回读多一次 SELECT。
+        ticket.setCreatedAt(LocalDateTime.now());
         ticketMapper.insert(ticket);
         log.info("创建工单: id={}, userId={}, conversationId={}", ticket.getId(), userId, conversationId);
         return ticket;
@@ -60,6 +66,8 @@ public class TicketServiceImpl implements TicketService {
         }
         ticket.setStatus(STATUS_REPLIED);
         ticket.setReply(reply);
+        // handlerId / repliedAt 均为应用侧显式赋值（不依赖 DB 默认值），
+        // 所以 updateById 后实体上两个字段已就绪，toVO 可直接回传（理由同 createTicket 的 createdAt）。
         ticket.setHandlerId(handlerId);
         ticket.setRepliedAt(LocalDateTime.now());
         ticketMapper.updateById(ticket);
@@ -88,7 +96,15 @@ public class TicketServiceImpl implements TicketService {
         return PageVO.of(records, page.getTotal(), page.getCurrent(), page.getSize());
     }
 
-    private TicketVO toVO(Ticket ticket) {
+    /**
+     * {@inheritDoc}
+     *
+     * <p>时间字段直接透传 {@link LocalDateTime}：全局 JacksonConfig 已统一把 LocalDateTime
+     * 序列化为 {@code yyyy-MM-dd HH:mm:ss}（D27），VO 侧不再加 {@code @JsonFormat}、
+     * 也不自行转 String（两处格式化会相互覆盖，难以排查）。</p>
+     */
+    @Override
+    public TicketVO toVO(Ticket ticket) {
         TicketVO vo = new TicketVO();
         vo.setId(ticket.getId());
         vo.setQuestion(ticket.getQuestion());

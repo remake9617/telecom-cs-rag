@@ -1,6 +1,7 @@
 package com.cs.infra.ai.controller;
 
 import com.cs.framework.common.R;
+import com.cs.framework.security.SecurityUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.embedding.EmbeddingModel;
@@ -12,10 +13,15 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * AI 能力联通性检查（M0 验收用）——验证 Chat(qwen-plus) 与 Embedding(bge-m3) 的 API Key 是否可用。
+ * AI 能力联通性检查与存活探针。
  *
- * <p>启动后访问 {@code GET /api/health/ai}，一次性探测两个模型供应商的连通性，
- * 对应 DESIGN M0 验收标准「三方 Key 联通」。</p>
+ * <p>提供两个端点：</p>
+ * <ul>
+ *   <li>{@code GET /api/health/ping} —— 无认证存活探针，不发起任何模型调用，
+ *       为将来容器 healthcheck 预留（SecurityConfig 已精确放行该路径）。</li>
+ *   <li>{@code GET /api/health/ai} —— AI 能力联通性探测（需 ADMIN），
+ *       真实发起一次 Chat + 一次 Embedding 调用，消耗供应商额度。</li>
+ * </ul>
  */
 @Slf4j
 @RestController
@@ -30,8 +36,27 @@ public class AiHealthController {
         this.embeddingModel = embeddingModel;
     }
 
+    /**
+     * 无认证存活探针——不发起任何模型调用，仅证明应用已启动且可响应 HTTP 请求。
+     *
+     * <p>为将来 Docker healthcheck / K8s livenessProbe 预留；
+     * SecurityConfig 已精确放行 {@code /api/health/ping}。</p>
+     */
+    @GetMapping("/ping")
+    public R<String> ping() {
+        return R.ok("pong");
+    }
+
+    /**
+     * AI 能力联通性探测（仅 ADMIN）。
+     *
+     * <p>本端点会真实发起一次 Chat 调用（阿里 qwen-plus）和一次 Embedding 调用
+     * （硅基流动 bge-m3），消耗供应商额度，故收归 ADMIN 权限。
+     * 未认证或非管理员调用将分别抛 1002/1003。</p>
+     */
     @GetMapping("/ai")
     public R<Map<String, Object>> checkAi() {
+        SecurityUtils.requireAdmin();
         Map<String, Object> result = new LinkedHashMap<>();
 
         // 1) Chat 联通（阿里 qwen-plus）

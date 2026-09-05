@@ -100,6 +100,8 @@ CREATE TABLE IF NOT EXISTS chat_reference (
   message_id   BIGINT      NOT NULL,
   doc_id       BIGINT,
   es_chunk_id  VARCHAR(64),
+  doc_title    VARCHAR(256) COMMENT '引用快照：文档标题（冗余，避免回放时 join）',
+  chunk_text   TEXT         COMMENT '引用快照：chunk 正文（冗余，回放时零查询还原原文预览）',
   score        DOUBLE      COMMENT 'RRF 融合分',
   rerank_score DOUBLE      COMMENT 'Rerank 重排分',
   KEY idx_msg (message_id)

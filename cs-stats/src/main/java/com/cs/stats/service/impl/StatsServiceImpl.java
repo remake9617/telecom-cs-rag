@@ -29,6 +29,9 @@ import java.util.stream.Collectors;
  *
  * <p>口径详见 {@link OverviewVO}。trend 缺数日补零：聚合 SQL 只返回有数据的日期，
  * 直接返回会断线，前端画折线图需要连续日期轴，故在服务层按日历补齐。</p>
+ *
+ * <p><b>依赖方向（D24）</b>：全部指标均由 {@link StatsMapper} 的只读聚合 SQL 产出，
+ * 本类不注入 cs-qa / cs-ticket / cs-knowledge / cs-system 的任何 Service 或 Mapper。</p>
  */
 @Slf4j
 @Service
@@ -52,8 +55,16 @@ public class StatsServiceImpl implements StatsService {
         vo.setAskCount(askCount);
         // 无反馈样本不硬造 0%——null 表示"暂无数据"，前端展示"-"
         vo.setResolveRate(like + dislike == 0 ? null : (double) like / (like + dislike));
-        vo.setTicketRate(askCount == 0 ? 0.0 : (double) ticketCount / askCount);
+        // 与 resolveRate 对称（D24/DEF-070）：askCount 为 0 时返回 null 而非 0.0，
+        // 避免空库看板同一张卡出现「转人工率 0.0%」与「解决率 -」两种口径。前端 formatPercent 已兼容 null。
+        vo.setTicketRate(askCount == 0 ? null : (double) ticketCount / askCount);
         vo.setOpenTicketCount(statsMapper.countOpenTickets());
+        // 存量规模三项（看板「知识库 / 文档」卡消费 kbCount/docCount，userCount 为契约完整性）：
+        // 全部走 StatsMapper 的只读聚合 SQL，不注入其它模块的 Service/Mapper（D24 依赖方向）。
+        // 不缓存：D5 规模下 COUNT(*) 为毫秒级，而看板需要实时新鲜度。
+        vo.setKbCount(statsMapper.countKnowledgeBases());
+        vo.setDocCount(statsMapper.countDocuments());
+        vo.setUserCount(statsMapper.countUsers());
         return vo;
     }
 

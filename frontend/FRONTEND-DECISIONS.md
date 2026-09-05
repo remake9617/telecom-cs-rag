@@ -50,7 +50,7 @@
 - **日期**：2026-09-04
 
 ## FD-8. 版本锁定 = React 18.3 + Vite 5 + AntD 5（不用 create-vite 默认模板）
-- **决策**：手动脚手架并锁定 React 18.3.1 + Vite 5 + @vitejs/plugin-react 4 + AntD 5.21 + TS 5.6，而非 `npm create vite@latest`。
+- **决策**：手动脚手架并锁定 React 18.3.1 + Vite 5 + @vitejs/plugin-react 4 + antd 5.29.3 + typescript 5.9.3，而非 `npm create vite@latest`。
 - **理由**：`create-vite@latest` 默认给 React 19 + Vite 7，而 D16 硬要求 React 18、AntD 5 与 React 18 组合最稳；手动锁定可控且可复现。Node 24 下 Vite 5.4 正常运行（engines 满足 >=20）。
 - **被放弃的方案**：直接 create-vite（会引入 React 19，违背 D16）；Vite 7（默认模板绑定 React 19）。
 - **日期**：2026-09-04
@@ -95,6 +95,25 @@
 - **角色枚举校准**：后端实为 `VISITOR/AGENT/ADMIN`（非早期假设的 USER），前端 `Role`/`ROLE_META`/Mock 已全部对齐。
 - **done.tokenCost 缺失**：后端当前 done 只发 `{messageId,conversationId}`，无 tokenCost；前端已将其设为可选、缺失时不展示 token 标签（建议后端补发或契约去掉该字段）。
 - **时间格式偏差**：后端返回 ISO `yyyy-MM-ddTHH:mm:ss`（带 T），契约写的是 `yyyy-MM-dd HH:mm:ss`；dayjs 两者都能解析、显示不受影响（建议后端对齐契约或契约更新）。
+- **日期**：2026-09-04
+
+---
+
+## FD-15. 前端依赖精确到 patch 级锁定（对应根 DECISIONS.md D25）
+- **决策**：`package.json` 的26 条 dependencies/devDependencies 全部去掉 `^` 前缀，锁定为 `package-lock.json` 实装版本（精确到 patch）；新增 `"engines": { "node": ">=20" }`；新建 `frontend/.npmrc`（`registry=https://registry.npmmirror.com`）使镜像源随仓库版本化。操作口径：改完 package.json 后必须 `npm install`（不能 `npm ci`），验收红线为 lock diff 只应出现在根 `packages[""]` 块的 spec 行。
+- **理由**：实测 26 包中 21 个已漂移（FD-8 写的「AntD 5.21 + TS 5.6」与实装 5.29.3/5.9.3 已失真）；锁定后消除「同一份 package.json 在不同时间装出不同依赖树」的漂移风险，与后端 D20 三 BOM 锁版本形成叙事对称。代价：阻断 patch 安全更新自动流入，需人工例行 `npm outdated` + `npm audit`。
+- **交叉引用**：FD-8（原始版本锁定策略）、根 DECISIONS.md D25（完整决策记录）。
+- **日期**：2026-09-04
+
+---
+
+## FD-16. FD-14 遗留的三处契约偏差全部闭环（后端 A 轮改造 + 前端类型对齐）
+- **背景**：FD-14 记录了真实联调实测发现的三处后端/契约偏差（`done.tokenCost` 缺失、时间格式带 T、`MessageVO` 引用断裂），本轮后端 A 轮改造已全部对齐契约，前端同步收口。
+- **① `done.tokenCost` 已由后端补发**：SSE `done` 事件现为 `{conversationId, messageId, tokenCost}`，DashScope 未回传 usage 时 `tokenCost` 为 null；前端 `MessageBubble` 的 `typeof message.tokenCost === 'number'` 守卫在 null 时自动隐藏 token 标签。**同步修复刷新丢标签**：后端 `MessageVO` 也新增 `tokenCost`，前端 `types/index.ts` 的 `MessageVO` 补 `tokenCost?: number`、`stores/chatStore.ts` 的 `hydrate` map 补 `tokenCost: m.tokenCost`——此前「流式结束显示 N tokens、刷新页面后标签消失」的断裂就此闭环。
+- **② 全局时间格式统一为 `yyyy-MM-dd HH:mm:ss`**：契约要求的空格格式（无 T），后端经 **JSR-310 全局序列化器**实现（注意：`spring.jackson.date-format` 对 `LocalDateTime` 无效，必须走 JavaTimeModule 自定义序列化器）。`TrendVO.date` 仍是 `yyyy-MM-dd`。前端 `utils/format.ts` 的 dayjs 解析本就兼容，显示不受影响。
+- **③ `MessageVO` 已带 `references`**：历史消息回放时引用原文预览不再断裂；`chatStore.hydrate` 早已透传 `m.references`，本轮后端补齐字段后即自动生效。
+- **附带收口**：`ConversationVO` 已去掉此前多返回的 `userId` 字段，形状回归契约的 `{id, title, lastActiveAt}`（`title` 后端保证非空，空值回填「新会话」）；前端 `types/index.ts` 的 `ConversationVO` 本就未声明 `userId`，无需改动。
+- **前端本轮改动**：`types/index.ts`（MessageVO.tokenCost、StatsOverview.resolveRate/ticketRate 改 `number|null` 对齐 D24、新增 openTicketCount、DocumentVO 枚举注释订正、StreamDoneInfo 注释订正）、`stores/chatStore.ts`（hydrate 透传 tokenCost）、`api/types.ts`（R.timestamp 改 `number|string`）。
 - **日期**：2026-09-04
 
 ---

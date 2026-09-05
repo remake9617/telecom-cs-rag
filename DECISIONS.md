@@ -147,12 +147,37 @@
 - **理由**：错误码统一走 R 体系，前端只需一套处理逻辑；避免 cs-ticket/cs-stats 为用 @PreAuthorize 而引 spring-security 依赖扩散；回退默认用户让工单/反馈/统计先于认证可端到端自测且角色校验逻辑一次写对（受保护接口匿名请求进不了 Controller，回退不会绕过鉴权）。
 - **被放弃的方案**：@PreAuthorize + @EnableMethodSecurity（校验失败抛 AccessDeniedException，要么被兜底成 1999 要么需额外 MVC handler，且依赖扩散）；URL 级 hasRole()（粒度粗）；先上鉴权再写业务（每步被阻塞）。
 - **待确认**：契约字面「无权限 403」与实现「HTTP 200 + code=1003」的口径差异，交统筹会话与前端对齐确认（未单方面改契约）。
+- **确认结论（2026-09-04 由用户拍板，此项关闭、不再悬置）**：RBAC 拒绝以 **HTTP 200 + `code=1003`** 为准。`contract/rest-api.md`「通用约定 · 错误」条其实**早已正确表述**该口径（未认证 → HTTP 401，前端据此跳登录；已认证但角色不足 → HTTP 200 + code=1003，前端提示「无权限」不跳登录），本轮核对确认**契约原文无需改动**；`RestAccessDeniedHandler` 的 HTTP 403 仅作过滤器链兜底、**当前不主动触发**。
 - **日期**：2026-09-04
 
 ## D24. M3 统计口径与实现 = 实时聚合 SQL + 每日快照归档双轨
 - **决策**：指标口径：咨询量 = chat_message(role=user) 消息数；解决率 = LIKE/(LIKE+DISLIKE)（无样本返回 null，不硬造 0%）；转人工率 = 工单数/咨询量；热点问题 = user 消息按内容分组 TopN；趋势按天聚合且缺数日补零。实现：cs-stats 用 @Select 聚合 SQL 只读直查 chat_message/ticket/feedback（不依赖对方模块 Service，守依赖方向）；另加 stat_snapshot 每日 00:05 幂等快照（uk_date 覆盖更新）供历史回看与阶段二评估。
 - **理由**：统计是读侧场景，表级只读是数仓/统计模块常规边界；MVP 单机 MySQL 聚合毫秒级无需 OLAP；实时接口保证演示数据新鲜，快照为阶段二 RAG 评估体系留时序数据。
 - **被放弃的方案**：依赖 cs-qa/cs-ticket Service（破坏依赖方向或需接口下沉）；只读快照（当天数据缺失，演示体验差）；ES 聚合热点（阶段二增强：ik 分词后按词根统计比整句 group by 更准）。
+- **日期**：2026-09-04
+
+## D25. 前端依赖版本精确锁定（patch 级）= 26 包去 caret 锁实装版本 + engines + .npmrc
+- **决策**：将 `frontend/package.json` 的 26 条 dependencies/devDependencies 全部去掉 `^` 前缀，锁定为当前 `package-lock.json` 的实装版本（精确到 patch）；新增 `"engines": { "node": ">=20" }`；新建 `frontend/.npmrc`（`registry=https://registry.npmmirror.com`）使镜像源配置随仓库版本化。操作口径：改 package.json 后必须 `npm install` 同步 lock（不能 `npm ci`，因其前置校验 spec 文本逐字一致会报 EUSAGE），验收红线为「lock diff 只应出现在根 `packages[""]` 块的 spec 行，不得有 version/resolved/integrity 变更」。
+- **理由**：实测漂移数据——26 个包中 21 个已漂移（声明下限 vs lock 实装），最大漂移：`@tanstack/react-query` minor +43（5.59.0→5.102.8）、`axios` minor +13（1.7.7→1.20.0）、`msw` +11（2.4.9→2.15.0）、`antd` +8（5.21.2→5.29.3）、`prettier` +6（3.3.3→3.9.6）。`FRONTEND-DECISIONS.md` FD-8 写的「AntD 5.21 + TS 5.6」与实装 5.29.3/5.9.3 已失真。收益：彻底消除「同一份 package.json 在不同时间 `npm install` 装出不同依赖树」的漂移风险，与 D20 后端三 BOM 锁版本形成前后呼应的叙事对称。代价：阻断 patch 级安全更新自动流入——`axios`/`eslint`/`vite` 属需要跟进安全公告的包，锁定后必须建立人工例行 `npm outdated` + `npm audit` 机制，否则从「版本漂移风险」换成「漏洞滞留风险」。`.npmrc` 理由：镜像源当前仅存在于用户级 `C:\Users\17962\.npmrc`，仓库内无 `.npmrc`；换机/CI 上 `npm ci` 走 lock 的 resolved 安全，但 `npm install` 新增依赖会回落 `registry.npmjs.org` 导致国内超时，且新条目 resolved 会污染 lock 一致性——与项目已有的 Docker Registry Mirror 治理思路一致。
+- **被放弃的方案**：① 只依赖 lock 不改 package.json（`npm ci` 能复现但 `npm install` 仍漂移，且 `^5.21.2` 与实装 `5.29.3` 差距过大不利阅读）；② 用 `overrides` 强制锁间接依赖（过重，MVP 无此需求）；③ 引入 renovate/dependabot 自动升级（毕设周期内维护成本不划算，可列阶段二可选）。
+- **日期**：2026-09-04
+
+## D26. 引用溯源 = 快照冗余落库（`chat_reference` 增 doc_title / chunk_text）
+- **决策**：`chat_reference` 表增加 `doc_title VARCHAR(256)` 与 `chunk_text TEXT` 两列，问答落库时冗余写入「当时向用户展示了什么」（`QaService.saveReferences` 从 `RetrievedChunk` 取 `docTitle` / `content`）。**旧数据降级规则**：本轮之前产生的引用行两列为 `null`，读取时 `docTitle` 按 `doc_id` 批量 join `kb_document.title` 兜底、`chunkText` 回填空串 `""`，**不做 ES 回查**。
+- **理由**：① **引用快照语义**——`chat_reference` 记录的是「当时向用户展示了什么」，本质是**审计快照**，与 `kb_chunk_meta` 的「当前索引状态」是两种不同职责，因此不违反「chunk 正文只存 ES、MySQL 仅存元数据」的原则；② **读性能**——历史消息回放零 ES 往返，且 ES 不可用时历史接口不会 500；③ **写放大量化**——一次问答最多 5 条引用 × 约 500 字符 ≈ 2.5KB，在 D5 的语料规模（数百文档 / 数千 chunk）下完全可接受。
+- **被放弃的方案**：① 纯 ES `mget` 按 `es_chunk_id` 回查（N+1 严重：20 条消息 × 5 引用 = 100 次 ES GET；且 ES 挂了整个历史接口 500）；② 只 join MySQL 取 `doc_title`、不冗余 `chunk_text`（引用来源面板展开后是空白，D10 纳入 MVP 的「回答溯源 + 引用原文预览」在历史回放路径上仍然断裂，等于没修）。
+- **日期**：2026-09-04
+
+## D27. 全局时间序列化 = JSR-310 `Jackson2ObjectMapperBuilderCustomizer`（cs-bootstrap）
+- **决策**：在 `cs-bootstrap` 新建 `JacksonConfig`，注册 `Jackson2ObjectMapperBuilderCustomizer` bean，用 `serializerByType` + `deserializerByType` **双向**把 `LocalDateTime` 定为 `yyyy-MM-dd HH:mm:ss`、`LocalDate` 定为 `yyyy-MM-dd`。**硬约束（必记）：不得把 datetime 的 pattern 套到 `LocalDate` 上**——否则将来 `StatsMapper` 若改返回 `LocalDate`，`TrendVO.date` 会变成 `2026-09-04 00:00:00`，污染前端折线图 X 轴。
+- **理由**：`spring.jackson.date-format` 只对 `java.util.Date`/`Timestamp` 生效，本项目时间字段全是 JSR-310 类型（`LocalDateTime`/`LocalDate`），配了等于没配（实测 `application.yml` 亦无该配置项）；且改造前实测输出为 ISO 带 `T`，与契约「通用约定 · 时间格式」条、前端 Mock 数据、`frontend/src/utils/format.ts` 的注释三处都不一致，改后端是向三者对齐。选 Customizer 而非直接暴露 `ObjectMapper` bean，是为了不覆盖 Boot 自动配置的其它默认行为、仅叠加格式化器；Deserializer 属**防御性注册**（当前全仓 `@RequestBody` DTO 均无日期字段）。**字段数口径校正**：`JacksonConfig` 的 Javadoc 写「15 个时间字段」，实测全仓 `LocalDateTime`/`LocalDate` 字段声明共 22 处，其中业务实体侧（扣除未启用的 `sys_role`/`sys_permission`）为 15 处。
+- **被放弃的方案**：① 逐字段加 `@JsonFormat`（易遗漏，且每次新增 VO 都要记得加，无强制机制）；② 改契约承认 ISO 带 `T`（用户已否决，选「后端补齐对齐契约」）；③ 配 `spring.jackson.date-format`（对 JSR-310 无效，正是本条要纠正的错误认知）。
+- **日期**：2026-09-04
+
+## D28. token 成本统计口径 = 末 chunk usage 覆盖累积 + 允许 null + HashMap 负载
+- **决策**：token 用量从流式**最后一个 chunk** 的 `ChatResponse.getMetadata().getUsage().getTotalTokens()` 取值，写入 `chat_message.token_cost` 并经 SSE `done` 事件回传；`MessageVO` 同步新增可空的 `tokenCost?`，修复「流式结束显示 N tokens 标签、刷新页面后标签消失」。**取不到 usage 时允许为 `null`**：前端以 `typeof === 'number'` 守卫自动隐藏标签、不报错；转人工 / 兜底分支不调模型，固定为 `null`。**实现坑（必记）**：SSE `done` 负载不能用 `Map.of` 构造（`Map.of` 不容忍 `null` value，`tokenCost` 为 `null` 时会运行期抛 NPE），须用 `HashMap`。
+- **理由**：DashScope 在流式模式下 usage 只在最后一个 chunk 返回，前面的 chunk 为 `null` 或 `0`，故需在消费侧用可变持有者「持续用非 null 值覆盖」（实现为单元素数组 `Integer[] tokenCostRef = {null}`，绕过 lambda 对捕获变量的 effectively-final 限制；消费是顺序阻塞的 `.toStream().forEach`，全程在同一异步线程内、事实单线程无并发写）；`AnswerGenerateService` 也因此把 `.stream().content()` 改为 `.stream().chatResponse()`——返回 `Flux<ChatResponse>` 而非 `Flux<String>`，纯文本流会丢失 usage。`chat_message.token_cost` 列与实体字段阶段一就已存在但从未被写入，本轮首次真正落值。`avgTokenCost` 本轮不做（D10 把成本分析归阶段二）。
+- **被放弃的方案**：① 删掉契约里的 `tokenCost` 字段（用户已否决）；② 用 `AtomicInteger` 累积（无法表达 `null`，与「允许为 null」的降级设计冲突）。
 - **日期**：2026-09-04
 
 ---

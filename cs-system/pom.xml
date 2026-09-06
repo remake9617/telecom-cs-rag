@@ -41,5 +41,11 @@
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-jackson</artifactId>
         </dependency>
+        <!-- JWT 主动作废（C2）：登出黑名单 + 用户禁用即时失效，Redis key 走 StringRedisTemplate。
+             版本由父 BOM 管理，cs-qa 已用同一 starter，非新增第三方库 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
     </dependencies>
 </project>

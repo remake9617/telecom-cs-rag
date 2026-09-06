@@ -13,6 +13,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
+import jakarta.servlet.DispatcherType;
+
 /**
  * Spring Security 配置（M3 认证收口，D17）。
  *
@@ -53,6 +55,13 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // DEF-078：放行 ASYNC 异步派发，消 SSE 完成后的 AccessDenied 日志噪音。
+                        // 安全性论证：① 异步派发只发生在主请求已通过鉴权之后，是同一请求的
+                        //   后续阶段（容器内部 forward），不是新入口——主请求过不了鉴权就根本
+                        //   不会进入 ASYNC 阶段；② DispatcherType 由容器按内部转发类型决定，
+                        //   客户端无法构造一个 DispatcherType.ASYNC 的外部请求。故放行 ASYNC
+                        //   不会让任何受保护端点绕过鉴权。
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .requestMatchers(
                                 "/api/auth/register",
                                 "/api/auth/login",

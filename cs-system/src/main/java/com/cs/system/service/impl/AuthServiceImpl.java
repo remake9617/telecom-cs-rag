@@ -5,6 +5,7 @@ import com.cs.framework.common.ErrorCode;
 import com.cs.framework.exception.BizException;
 import com.cs.system.entity.SysUser;
 import com.cs.system.mapper.SysUserMapper;
+import com.cs.system.security.TokenRevocationService;
 import com.cs.system.service.AuthService;
 import com.cs.system.util.JwtService;
 import com.cs.system.vo.LoginVO;
@@ -13,6 +14,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 
 /**
  * 认证服务实现。
@@ -37,6 +40,7 @@ public class AuthServiceImpl implements AuthService {
     private final SysUserMapper userMapper;
     private final JwtService jwtService;
     private final BCryptPasswordEncoder passwordEncoder;
+    private final TokenRevocationService tokenRevocationService;
 
     @Override
     public LoginVO register(String username, String password) {
@@ -78,5 +82,21 @@ public class AuthServiceImpl implements AuthService {
             throw new BizException(ErrorCode.USER_NOT_FOUND);
         }
         return UserVO.from(user);
+    }
+
+    @Override
+    public void logout(String token) {
+        try {
+            Claims claims = jwtService.parse(token);
+            tokenRevocationService.revoke(token, claims);
+        } catch (JwtException | IllegalArgumentException e) {
+            // 登出幂等：token 已过期/非法时无需拉黑（本来就无法通过过滤器）
+            log.debug("登出时 token 已无效，跳过拉黑: {}", e.getMessage());
+        }
+    }
+
+    @Override
+    public void invalidateUser(Long userId) {
+        tokenRevocationService.invalidateUser(userId);
     }
 }

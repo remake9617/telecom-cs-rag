@@ -11,6 +11,7 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
+import java.util.UUID;
 
 /**
  * JWT 签发与校验（D17，jjwt 0.12.x API）。
@@ -18,6 +19,10 @@ import java.util.Date;
  * <p>HS256 对称签名：单服务部署下签发与校验同钥，简单够用；
  * 秘钥走环境变量 JWT_SECRET（不入库，D19）。payload 自定义声明：
  * uid / username / role，校验时还原为 {@code LoginUser}。</p>
+ *
+ * <p>C2（DEF-028）：每个 token 带唯一 {@code jti}（JWT ID），作为登出黑名单
+ * 的 Redis key（{@code jwt:blacklist:{jti}}）；历史无 jti 的旧 token 由
+ * TokenRevocationService 回退到 token 摘要作 key，过滤器做兼容。</p>
  */
 @Component
 public class JwtService {
@@ -46,6 +51,8 @@ public class JwtService {
         Instant now = Instant.now();
         return Jwts.builder()
                 .subject(username)
+                // jti：token 唯一标识，登出黑名单用它作 Redis key（短于整串 token，且为后续审计追踪留基础）
+                .id(UUID.randomUUID().toString())
                 .claim("uid", userId)
                 .claim("role", role)
                 .issuedAt(Date.from(now))

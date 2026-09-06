@@ -30,6 +30,14 @@ import java.util.List;
  *
  * <p>SSE 说明：POST /api/qa/chat/stream 走 fetch + Authorization 头，
  * 本过滤器是标准 OncePerRequestFilter，对 SSE 同样生效，无需特殊处理。</p>
+ *
+ * <p>C2（DEF-028）主动作废：签名/过期校验通过后还要过两道 Redis 检查——
+ * ① 登出黑名单（{@code jwt:blacklist:{jti}}，EXISTS，O(1)）；
+ * ② 用户级失效时间戳（{@code jwt:user-invalid:{uid}}，GET 后与 issuedAt 比对）。
+ * <b>性能说明</b>：这是每个受保护请求都要走的路径，最多多两次 Redis 往返
+ * （内网 RTT 亚毫秒级，相对下游模型调用/MySQL 查询可忽略）；
+ * 本地缓存（Caffeine）可减往返但会牺牲登出/封号的即时性且需新增依赖，MVP 不引。
+ * 两道检查任一命中均视同未认证：清空上下文交给授权环节 401，与非法 token 同路。</p>
  */
 @Slf4j
 @Component
@@ -39,6 +47,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtService jwtService;
+    private final TokenRevocationService tokenRevocationService;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
@@ -46,15 +55,24 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith(BEARER_PREFIX)
                 && SecurityContextHolder.getContext().getAuthentication() == null) {
+            String token = header.substring(BEARER_PREFIX.length());
             try {
-                Claims claims = jwtService.parse(header.substring(BEARER_PREFIX.length()));
-                LoginUser user = new LoginUser(
-                        claims.get("uid", Long.class),
-                        claims.getSubject(),
-                        claims.get("role", String.class));
-                UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
-                        user, null, List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole())));
-                SecurityContextHolder.getContext().setAuthentication(auth);
+                Claims claims = jwtService.parse(token);
+                Long userId = claims.get("uid", Long.class);
+                // 主动作废检查：黑名单命中（登出）或早于用户级失效时间戳（禁用）→ 视同未认证
+                if (tokenRevocationService.isRevoked(token, claims)
+                        || tokenRevocationService.isUserInvalidated(userId, claims.getIssuedAt())) {
+                    log.debug("JWT 已被主动作废（黑名单或用户级失效）: uid={}", userId);
+                    SecurityContextHolder.clearContext();
+                } else {
+                    LoginUser user = new LoginUser(
+                            userId,
+                            claims.getSubject(),
+                            claims.get("role", String.class));
+                    UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+                            user, null, List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole())));
+                    SecurityContextHolder.getContext().setAuthentication(auth);
+                }
             } catch (JwtException | IllegalArgumentException e) {
                 // token 无效/过期：清空上下文交给授权环节 401，不打断放行接口
                 log.debug("JWT 校验失败: {}", e.getMessage());

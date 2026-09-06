@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -43,5 +44,19 @@ public class AuthController {
     @GetMapping("/me")
     public R<UserVO> me() {
         return R.ok(authService.me(SecurityUtils.requireUserId()));
+    }
+
+    private static final String BEARER_PREFIX = "Bearer ";
+
+    /**
+     * 登出：把当前 token 加入 Redis 黑名单（C2，DEF-028，需认证）。
+     *
+     * <p>契约新增端点提案（路径/方法/入参/出参/权限）已交统筹，
+     * 待用户确认后由统筹落盘 contract/rest-api.md，此处先行实现。</p>
+     */
+    @PostMapping("/logout")
+    public R<Void> logout(@RequestHeader("Authorization") String authorization) {
+        authService.logout(authorization.substring(BEARER_PREFIX.length()));
+        return R.ok();
     }
 }

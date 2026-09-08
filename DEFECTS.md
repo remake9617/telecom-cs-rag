@@ -31,9 +31,9 @@
 | 等级 | ◐ 修复中 | ☑ 已解决 | ⊘ 未排期 | ✗ 不修 | 合计 |
 |------|----------|----------|----------|--------|------|
 | P0   | 0        | 6        | 0        | 0      | 6    |
-| P1   | 0        | 22       | 5        | 0      | 27   |
-| P2   | 0        | 25       | 18       | 2      | 45   |
-| **合计** | **0** | **53** | **23** | **2** | **78** |
+| P1   | 0        | 26       | 2        | 0      | 28   |
+| P2   | 1        | 38       | 16       | 3      | 58   |
+| **合计** | **1** | **70** | **18** | **3** | **92** |
 
 ---
 
@@ -50,7 +50,7 @@
 
 ---
 
-## 二、P1 主表（27 条：☑22 + ⊘5）
+## 二、P1 主表（28 条：☑26 + ⊘2）
 
 | ID | 缺陷 | 类型 | 证据(文件#行) | 影响 | 归属模块 | 状态 | 解决日期 | 验证证据出处 | 处置/关联任务 |
 |---|---|---|---|---|---|---|---|---|---|
@@ -74,17 +74,18 @@
 | DEF-024 | Mock handlers/auth.ts:24 密码错误用 5001(USER_NOT_FOUND)，应为 5003 | 代码缺陷 | `mocks/handlers/auth.ts:24` fail(5001,...) | 违反 D22 防枚举设计意图，Mock 与真实行为不一致 | frontend | ☑ | 2026-09-04 | M4§5门禁lint | T6 |
 | DEF-025 | Dashboard.tsx:98-100 页脚「当前为 Mock 数据，联调后自动切换真实统计」过时 | 代码缺陷 | Dashboard.tsx | 不存在自动切换机制，文案误导用户认为数据非真实 | frontend | ☑ | 2026-09-04 | M4§6.5 | T6 |
 | DEF-063 | 前端质量门禁 `npm run lint` 当前为红：8 problems(7 errors + 1 warning)，含 irregular whitespace、unused var、react-refresh 警告；`--max-warnings 0` 下门禁长期失效 | 工程缺陷 | `npm run lint` 8 problems：MarkdownRenderer.tsx#22:17 no-unused-vars(node，行内disable+理由)；Login.tsx#67 列31/33/49/51 ×4 no-irregular-whitespace(全角空格)；MyTickets.tsx#72 列40/42 ×2 no-irregular-whitespace；router/index.tsx#22:10 react-refresh/only-export-components(warning，拆出 SuspensePage.tsx)。处置：6改普通空格+1带理由disable+1拆文件，未改.eslintrc.cjs；修复后 lint exit0 | 门禁常红等于没有门禁，后续新引入的 lint 问题被预存噪音掩盖，无法通过 lint 判断改动是否干净 | frontend | ☑ | 2026-09-04 | M4§5门禁lint0 | 前端配合改动与文案清理任务(F1-F13)负责修到 exit 0 |
-| DEF-026 | 7 处大模型调用全是裸调用 + try-catch，无超时/重试/熔断/降级；ChatClient 在 4 个类各自 build | 架构缺陷 | cs-qa/cs-infra-ai 多处 ChatClient.builder().build() | 单供应商抖动即全链失败，D10 创新点4 未兑现 | cs-qa + cs-infra-ai | ⊘ | | | D10 创新点4；阶段二首推；DEC-PEND-03 |
+| DEF-026 | 7 处大模型调用全是裸调用 + try-catch，无超时/重试/熔断/降级；ChatClient 在 4 个类各自 build | 架构缺陷 | cs-qa/cs-infra-ai 多处 ChatClient.builder().build() | 单供应商抖动即全链失败，D10 创新点4 未兑现 | cs-qa + cs-infra-ai | ☑ | 2026-09-09 | M5§三(路7)：CircuitBreaker 19/19 断言 + Run A–D 四轮实测；容器内 failover 链就绪日志 | 路7 ChatModelFacade + 手写三态熔断 + failover（D30/D31）；cs.ai.resilience.* 键已落 yml |
 | DEF-027 | 全仓自动化测试覆盖为 0：后端无 src/test、前端无 vitest | 工程缺陷 | 项目目录结构 | 任何改动缺回归保护，重构风险不可控 | 全仓 | ⊘ | | | DEC-PEND-04 |
-| DEF-028 | JWT 无法主动作废，仅 24h 过期兜底，无 Redis 黑名单、无刷新令牌 | 安全(中) | cs-system JwtService | 令牌泄露后无法立即失效，封号/登出无即时效果 | cs-system | ⊘ | | | 阶段二 |
+| DEF-028 | JWT 无法主动作废，仅 24h 过期兜底，无 Redis 黑名单、无刷新令牌 | 安全(中) | cs-system JwtService | 令牌泄露后无法立即失效，封号/登出无即时效果 | cs-system | ☑ | 2026-09-09 | M5§三(路8+收口)：登出后同 token me=401；黑名单 TTL=剩余有效期；禁用链路真实数据 401/200/200 实测 | 路8 jti + 双 key（D29）；logout 幂等由 DEF-092 补齐 |
 | DEF-029 | 入库 ES/MySQL 非事务一致性：@Transactional 只保 MySQL，回滚后 ES 残留 chunk | 代码缺陷 | IngestionService | ES 残留 chunk 被检索命中导致答案引用不存在的文档 | cs-ingestion | ⊘ | | | 阶段二 RocketMQ 事务消息补偿 |
-| DEF-030 | cs.jwt.secret 与 cs.admin.default-password 有弱默认值兜底，忘配 .env 会静默用开发密钥启动 | 安全隐患 | `application.yml:93,97` 含默认值 | 公网部署时若忘配环境变量，任何人可伪造 JWT 或猜中管理员密码 | cs-bootstrap | ⊘ | | | **启动 M4-B 时立即升 P0**；DESIGN §4.1 fail-fast 未实现 |
+| DEF-030 | cs.jwt.secret 与 cs.admin.default-password 有弱默认值兜底，忘配 .env 会静默用开发密钥启动 | 安全隐患 | `application.yml:93,97` 含默认值 | 公网部署时若忘配环境变量，任何人可伪造 JWT 或猜中管理员密码 | cs-bootstrap | ☑ | 2026-09-09 | M5§三(路6 B5)：严格×短密钥/弱默认值/容器缺键等 5 情形均拒绝启动，清单只列键名不回显值 | 路6 ConfigValidation（EnvironmentPostProcessor）+ cs.strict-config 双模式 |
 | DEF-067 | DESIGN §5.3 把 rate:limit/idem/hot:qa 三 Redis key 标 MVP 且 §6.1 承诺「幂等+限流」，实测零读写代码 | 设计承诺未兑现 | `docs/DESIGN.md` §5.3/§6.1 vs 全仓 grep 三 key=0 | 设计承诺未兑现，MVP 仅落地 conv:memory | 文档 | ☑ | 2026-09-04 | M4§7(用户拍板降级阶段二) | 阶段1修正1 |
 | DEF-068 | DESIGN §5.2 ES 索引表把 chunk_id/doc_id 等误列顶层、metadata 描述失真，字段名应为 metadata.doc_title | 文档错误(可致真实bug) | `docs/DESIGN.md` §5.2 vs `es-chunk-mapping.json` | 照原表写 term(doc_id) 会静默删不掉 chunk | 文档 | ☑ | 2026-09-04 | M4§7(阶段1修正5) | 阶段1修正5 |
+| DEF-086 | 统筹给出的 `env \| grep` 排查命令导致 AI_DASHSCOPE_API_KEY 与 SILICONFLOW_API_KEY 明文回显，进入对话记录与 VM shell 历史 | 流程缺陷（统筹自身） | VM 排查命令设计 | 密钥泄露，用户已轮换两个密钥 | 流程 | ☑ | 2026-09-09 | M5§四：替代写法 `env \| cut -d= -f1` 只取键名，已固化进 phase2-common 与收口工作单硬约束 | 收口固化纪律 |
 
 ---
 
-## 三、P2 主表（45 条：☑25 + ⊘18 + ✗2）
+## 三、P2 主表（57 条：☑38 + ⊘15 + ✗3 + ◐1）
 
 | ID | 缺陷 | 类型 | 证据(文件#行) | 影响 | 归属模块 | 状态 | 解决日期 | 验证证据出处 | 处置/关联任务 |
 |---|---|---|---|---|---|---|---|---|---|
@@ -109,9 +110,9 @@
 | DEF-049 | RetrievalRequest.kbId 与 minScore 声明但从未使用 | 代码冗余 | `RetrievalRequest.java` | 字段存在给调用方造成「可过滤」的错觉 | cs-knowledge | ⊘ | | | 阶段二多库路由时启用 |
 | DEF-050 | QaService.chatStream 用默认 ForkJoinPool.commonPool，无专用线程池 | 性能隐患 | QaService.java | 高并发下 SSE 流与其他异步任务竞争线程，响应劣化 | cs-qa | ⊘ | | | 阶段二 |
 | DEF-051 | ES client 版本隐式锁定：根 pom 无 elasticsearch.version，升 Spring AI 会静默错配 | 配置隐患 | 根 pom.xml；`deploy/elasticsearch/Dockerfile:7` | Spring AI 升级后 client/server 版本分裂，运行期才暴露 | 根 pom + deploy | ⊘ | | | DEC-PEND-08 |
-| DEF-052 | docker-compose.yml 只有中间件三件套，缺 backend/frontend 编排 | 部署缺口 | docker-compose.yml | 换机部署必须人工记得跑 init-index.sh，不可复现 | deploy | ⊘ | | | 用户本轮跳过；挂 M4-B |
-| DEF-053 | 无任何 CI 配置 | 工程缺口 | .github/workflows 等均不存在 | 代码合并无自动化门禁，质量全靠人工 | 全仓 | ⊘ | | | 挂 M4-B 或阶段二 |
-| DEF-054 | 后端全仓无 CORS 配置，生产缺 nginx 同源反代方案 | 部署约束 | grep CORS = 0 | 生产部署时前端跨域请求全部失败 | cs-bootstrap | ⊘ | | | 挂 M4-B（nginx 同源反代） |
+| DEF-052 | docker-compose.yml 只有中间件三件套，缺 backend/frontend 编排 | 部署缺口 | docker-compose.yml | 换机部署必须人工记得跑 init-index.sh，不可复现 | deploy | ☑ | 2026-09-09 | M5§三(路6 B1)：全栈五服务 healthy + es-init 幂等建索引 + 27 端点经 8088 全回归 | 路6 全栈编排（name 钉死防卷孤立，D35） |
+| DEF-053 | 无任何 CI 配置 | 工程缺口 | .github/workflows 等均不存在 | 代码合并无自动化门禁，质量全靠人工 | 全仓 | ☑ | 2026-09-09 | M5§三(路6)：.github/workflows/ci.yml 交付（后端 package + 前端 tsc/build/lint，零密钥） | 路6 |
+| DEF-054 | 后端全仓无 CORS 配置，生产缺 nginx 同源反代方案 | 部署约束 | grep CORS = 0 | 生产部署时前端跨域请求全部失败 | cs-bootstrap | ☑ | 2026-09-09 | M5§三(路6)：nginx 同源反代——27 端点经 8088 全绿、SSE 40+ 事件跨 5.5s 逐包到达、产物 grep localhost:8080 命中 0 | 路6 deploy/nginx/nginx.conf |
 | DEF-055 | build.ps1 的 .env 解析器不支持引号包裹值、行尾注释、多行值、export 前缀 | 工具局限 | build.ps1 -split '=',2 | 特定格式的 .env 值会被截断或解析错误 | 工具链 | ⊘ | | | 低优先；写 .env 时避开 |
 | DEF-056 | 前端仓库内无 .npmrc，镜像源只在用户级配置 | 工程隐患 | frontend/ 无 .npmrc | 换机/CI 上 npm install 回落 npmjs.org 超时，lock resolved 不一致 | frontend | ☑ | 2026-09-04 | M4§5门禁npm-ls+.npmrc | T5 |
 | DEF-057 | frontend/.env 被 gitignore，换机回落 .env.example 的 VITE_USE_MOCK=true | 环境陷阱 | frontend/.gitignore + .env.example | 静默回到 Mock 模式，开发者误以为在联调真实后端 | frontend | ☑ | 2026-09-04 | M4§6.1,10+.env.example | T6 (F13) |
@@ -132,7 +133,20 @@
 | DEF-075 | JacksonConfig Javadoc「15个时间字段」不精确(全仓22处，业务实体侧15处) | 注释口径不精确 | JacksonConfig Javadoc | 字段数口径误导 | cs-bootstrap | ☑ | 2026-09-04 | M4§7(D27字段数校正) | D27 留痕 |
 | DEF-076 | M1-report 缺「踩坑」段，四份报告段数段序不统一 | 规范执行不一致 | M0~M3-report 段序 | 历史报告不统一 | 文档 | ✗ | | | **不修**：历史报告不回改；CONVENTIONS§13 历史现状已记录 |
 | DEF-077 | F1：SSE KB路径事件序 reference→message→done 与契约 L95-102(message→reference→done) 不符 | 文档漂移 | QaService L121 检索后推reference / L151 生成推message | 功能无害(前端按事件名消费)；契约文本与实现不一致 | 文档+cs-qa | ⊘ | | | 建议下轮改契约对齐实现；M4§5.13/§6.2 实测留证 |
-| DEF-078 | F3：SSE 完成后 async dispatch 抛 AuthorizationDeniedException「Access Denied」+response already committed 3条ERROR | 日志噪音 | Spring Security6 未放行 DispatcherType.ASYNC | 功能无害(客户端已收全流)；ERROR 日志噪音 | cs-system | ⊘ | | | 建议级：SecurityConfig 放行 ASYNC dispatch；M4§5.13 实测留证 |
+| DEF-078 | F3：SSE 完成后 async dispatch 抛 AuthorizationDeniedException「Access Denied」+response already committed 3条ERROR | 日志噪音 | Spring Security6 未放行 DispatcherType.ASYNC | 功能无害(客户端已收全流)；ERROR 日志噪音 | cs-system | ☑ | 2026-09-09 | M5§三(路8)：放行 ASYNC 后 SSE 完成日志零 AccessDenied（改动前 M4 为 3 条 ERROR） | 路8 SecurityConfig 放行（含安全性论证注释） |
+| DEF-079 | 项目无「禁用用户」管理端点，sys_user.status 仅在登录处被消费，路8 实现的 AuthService.invalidateUser(userId) 当前无任何调用方 | 功能缺口 | AuthService.invalidateUser 全仓 grep 无调用方；sys_user.status 仅登录路径消费 | 管理员无法封号；路8 的「用户禁用即时失效」能力有实现无入口，只能靠 redis-cli 手工写时间戳验证 | cs-system | ⊘ | | | 归管理端增强批次（与 DEF-047 RBAC 升级同期）；路8 于 2026-09-05 上报，统筹 2026-09-09 补录（原收口工作单漏列此 ID 致悬空引用，同类问题 A 轮 DEF-065 已发生过一次） |
+| DEF-080 | QueryRewriteService 未校验模型输出有效性，「-」等垃圾被当作有效重写污染检索 | 代码缺陷 | QueryRewriteService.rewrite | 垃圾重写劣化检索质量 | cs-qa | ☑ | 2026-09-09 | M5§三(路7 补刀1)：isValidRewrite 三条判定，13 项断言 PASS | 路7 补刀1 |
+| DEF-081 | 客户端断开后 Flux 仍继续生成至完毕（token 白烧） | 资源浪费 | QaService chatStream | SSE 取消后模型调用未中止 | cs-qa | ⊘ | | | 挂路10（与 C5 限流/记忆摘要一并处理） |
+| DEF-082 | saveAssistantMessage/saveUserMessage 无 content 守卫，null 撞 NOT NULL 约束且被宽 catch 统一报成 3002 掩盖真因 | 代码缺陷 | QaService 落库路径 | 排障方向被误导（容器实测实际发生） | cs-qa | ☑ | 2026-09-09 | M5§三(路7 补刀2)：入口守卫 + resolveErrorCode 按异常类型分派，16/16 断言 PASS | 路7 补刀2（D32） |
+| DEF-083 | SSE 经 nginx 的逐包穿透未实测（proxy_buffering off 是否生效无证据） | 部署验证缺口 | deploy/nginx/nginx.conf | 若攒包则流式打字机效果完全失效 | deploy | ☑ | 2026-09-09 | M5§三(路6)：SSE 40+ 事件跨 5.5s 逐包到达（逐行时间戳留证） | 路6 实测闭环 |
+| DEF-084 | compose 项目名随目录变化，阶段一数据卷被静默孤立（aibishe_* 与 telecom-cs-rag_* 两套卷并存） | 部署缺陷 | docker-compose.yml 缺顶层 name | 数据「消失」假象，实为旧卷不再挂载 | deploy | ☑ | 2026-09-09 | M5§三(路6)：yml 钉死 name: telecom-cs-rag 后旧卷回归（24 会话、doc1 三 chunks、两个旧知识库） | 路6 修复（D35） |
+| DEF-085 | 未匹配的 /api/** 路径穿透静态资源处理器抛 NoResourceFoundException，被兜底成 1999「系统繁忙」 | 代码缺陷 | GlobalExceptionHandler 无该异常分支 | 客户端 URL 写错被报成服务端内部错误，误导排障（路6 容器实测实际发生） | cs-framework | ☑ | 2026-09-09 | M5§三(收口)：新增分支返回 1004 + warn 日志，实测 HTTP 200 {"code":1004} | 收口修复 |
+| DEF-087 | 容器内出网到模型供应商间歇性 Connection reset（attempt=1/3 失败后重试成功） | 环境 | 收口实测：容器 MTU 1400=预置生效值、宿主 1500，Docker 默认 bridge MTU 本会继承宿主（原本一致）；reset 后重试即成 | 偶发一次重试开销，已被路7 重试机制消化 | 环境 | ✗ | | | **不修**：非本项目缺陷（供应商侧间歇抖动，D30 重试已消化）；MTU 预置属无依据推测性改动已回退，回退后 SSE 逐包复测无退化 |
+| DEF-088 | ChatRequest.question 缺 DTO 层校验；question=null 时 NPE→3002「系统繁忙」，排障成本被显著放大（路6 与路7 从不同方向独立发现） | 代码缺陷 | QaService/QaController | 参数错误与系统错误不可区分 | cs-qa | ☑ | 2026-09-09 | M5§三(收口)：服务层守卫 SSE error 1001 + 会话数 19→19 零落库实测；DTO @Valid 停手上报（SSE 端点返回 HTTP 200+JSON 会被前端静默吞掉，待统筹拍板，见 D32） | 路7 服务层守卫运行时闭环；**统筹 2026-09-09 裁决选项①：仅保留服务层守卫、不加 DTO 层 @Valid**——SSE 的错误通道是事件流而非 HTTP 响应体，@Valid 失败返回的 JSON 会被前端 chatStream.ts 静默吞掉；定制 SSE 感知的校验失败处理器复杂度高收益低；改前端是为后端的错误设计买单。**该裁决上升为架构口径**：SSE 端点的参数校验一律在服务层做并以 SSE error 事件出口，待写入 CONVENTIONS §4 的 SSE 例外段 |
+| DEF-089 | 路7 入口守卫使 done.messageId 可能为 null，A 轮契约与前端类型声明必填——类型在撒谎 | 契约与类型不一致 | contract SSE 段；types/index.ts StreamDoneInfo | 运行期安全（?? tempId 防御+点赞灰化）但类型不实 | contract + frontend | ☑ | 2026-09-09 | M5§三(收口)：契约补口径 + StreamDoneInfo.messageId: number\|null，前端 tsc/build/lint 三门禁 exit0 | 收口修复 |
+| DEF-090 | 历史工单 ticket3~8 为 9 月 4–6 日 GBK 乱码数据（PowerShell 内联中文传参遗留），答辩演示观感差 | 数据卫生 | ticket 表 | 管理后台工单列表出现乱码 | 数据 | ☑ | 2026-09-09 | M5§三(收口)：清理乱码与三路测试数据，p9- 前缀重建演示数据（kb4/doc6/conv34/ticket10 REPLIED/resolveRate=0.5） | 收口清理+重建 |
+| DEF-091 | 启动包/部署手册 SSE 示例把请求字段写成 message，契约实际是 question，后续路会抄示例 | 文档勘误 | docs/reports/deploy-guide.md §8 示例；统筹派单消息 | 按示例构造请求全部 3002，浪费整轮排障 | 文档 | ☑ | 2026-09-09 | M5§三(收口)：deploy-guide 示例已改 question；verify-integration.ps1 本就正确 | 收口修正；启动包示例位置已列回执供统筹知会 |
+| DEF-092 | logout 二次调用返回 1002 而非契约承诺的幂等 code=0（已拉黑 token 被过滤器拦截，到不了 Controller） | 代码缺陷 | SecurityConfig 放行清单无 logout | 登出后前端再调 logout 会得到错误提示 | cs-system | ◐ | | | 收口已修复（SecurityConfig 精确放行 + 安全性论证注释），cs-server.jar 已重新构建；**部署复验待下次部署**（用户裁定跳过本轮部署验证） |
 
 ---
 

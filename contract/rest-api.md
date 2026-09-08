@@ -3,8 +3,9 @@
 > **用途**：前端路4 据此 Mock 并行开发；后端各路据此实现 Controller。这是阶段 B 的冻结契约之一，变更需同步所有路（见 CONVENTIONS 第 11 节）。
 > **统一响应**：所有接口返回 `R<T>` = `{ code, message, data, timestamp, traceId }`，`code=0` 成功（见 CONVENTIONS 第 5 节）。
 > **认证**：除**放行清单**外，均需请求头 `Authorization: Bearer <JWT>`。
-> **放行清单（共 4 条，与 `cs-system/.../config/SecurityConfig.java` 逐字一致）**：`/api/auth/register`、`/api/auth/login`、`/api/health/ping`、`/error`。
+> **放行清单（共 5 条，与 `cs-system/.../config/SecurityConfig.java` 逐字一致）**：`/api/auth/register`、`/api/auth/login`、`/api/auth/logout`、`/api/health/ping`、`/error`。
 > - `/error` 是 Spring Boot 错误页转发路径，**不放行会把真实错误包装成 401**，排障困难（M3 已追加，本轮同步进契约）。
+> - `/api/auth/logout` 放行是 DEF-092 幂等修复：已拉黑的 token 会被 JWT 过滤器拦下，若不放行则永远到不了 Controller，契约承诺的「重复登出不报错」无从实现；Controller 直读 `Authorization` 头，不依赖认证上下文，无新增攻击面（批次 0 集成收口追加）。
 > - `/api/health/**` **不整体放行**，仅精确放行 `/api/health/ping`；`/api/health/ai` 需 ADMIN（见第 8 节）。
 
 ---
@@ -22,6 +23,7 @@
 |---|---|---|---|---|
 | POST | `/api/auth/register` | `{username, password}` | `{token, user}` | 访客注册，返回 JWT |
 | POST | `/api/auth/login` | `{username, password}` | `{token, user}` | 登录 |
+| POST | `/api/auth/logout` | 无 body（token 取 `Authorization` 头） | `null`（`R<Void>`） | 登出（**幂等**：重复登出与 token 已过期均不报错；批次 0 用户批准新增） |
 | GET | `/api/auth/me` | — | `UserVO{id,username,nickname,role}` | 当前登录用户 |
 
 ## 2. 问答 `/api/qa`（cs-qa）
@@ -99,13 +101,14 @@ event: reference
 data: {"references":[{"docTitle":"5G套餐资费","chunkText":"...原文片段...","score":0.87}]}
 
 event: done
-data: {"messageId":123,"conversationId":45,"tokenCost":850}
+data: {"messageId":123,"conversationId":45,"tokenCost":850}   # messageId 可能为 null（见下方口径）
 
 event: error                          # 出错时（替代 done）
 data: {"code":3002,"message":"模型调用失败"}
 ```
 - **转人工（TICKET 意图 / 检索为空兜底）**：后端**自动创建工单**并推 `event: ticket_hint`，data = `{conversationId, ticketId, autoCreated:true}`。前端据此显示「查看工单 #ticketId」并跳转工单页，**不要再 POST /api/ticket**（后端已建单，避免重复）。
 - `POST /api/ticket` 仅用于用户**主动**转人工（非 AI 自动判定）的场景，如答案旁的「转人工」按钮。
+- **`done.messageId` 口径（批次 0 修正，DEF-089）**：**可能为 null**——当生成内容为空未落库时为 null（路7 入口守卫的合法路径），此时该条消息不可点赞属预期行为（前端有 `?? tempId` 防御与点赞灰化）。
 
 ---
 

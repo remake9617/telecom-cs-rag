@@ -180,6 +180,55 @@
 - **被放弃的方案**：① 删掉契约里的 `tokenCost` 字段（用户已否决）；② 用 `AtomicInteger` 累积（无法表达 `null`，与「允许为 null」的降级设计冲突）。
 - **日期**：2026-09-04
 
+## D29. JWT 主动作废 = jti + Redis 双 key（登出黑名单 + 用户级失效）
+- **决策**：签发时加 `jti`(UUID) + Redis 双 key（`jwt:blacklist:{jti}` 登出黑名单 + `jwt:user-invalid:{userId}` 用户级失效时间戳）+ JWT 过滤器两道作废检查 + `POST /api/auth/logout` 幂等登出；旧 token 无 jti 时回退 `SHA-256(token)` 摘要作 key。批次 0 集成收口追加：`/api/auth/logout` 精确放行（DEF-092），否则已拉黑 token 被过滤器拦下、幂等无从谈起。
+- **理由**：令牌泄露后需立即失效，仅靠 24h 过期不够；黑名单 TTL 取剩余有效期避免积累无用键；加 `jti` 同时为将来的 token 追踪与 `audit_log`（DEF-046）打基础。
+- **被放弃的方案**：① 双 token（access+refresh）：必然牵动前端存双 token 与 401 刷新重试，越出「仅 cs-system」边界，且黑名单方案已覆盖登出与封号两个真实场景，无实质缺陷；② 引入 `UserDetailsService` 体系：D22 明确禁止，会与手动查库流程冲突；③ 本地缓存（Caffeine）减少 Redis 往返：新增依赖触碰 D20，且实测增量仅约 5ms 不值得。
+- **日期**：2026-09-09
+
+## D30. 模型可靠层路线 = ChatModelFacade + 手写三态熔断 + 备用模型手动构造不注册为 bean
+- **决策**：`cs-infra-ai` 建 `ChatModelFacade` 作全仓唯一模型调用入口，手写三态 `CircuitBreaker`（滑动窗口 + 并发安全），备用模型**手动构造 `OpenAiChatModel` 且不注册为 Spring bean**；failover 链 DashScope qwen-plus → 硅基流动免费 Chat（备1）→ GLM-4-Flash/DeepSeek（备2/3，无 key 自动不注册）。
+- **理由**：① 复用 `cs-infra-ai` 已有的 `spring-ai-starter-model-openai`（embedding 在用），**零新增依赖**不触碰 D20；② 流式天然统一为 `Flux<ChatResponse>`，消除自研响应式 SSE 解析的风险，且 usage 提取与主链同构保住 tokenCost；③ 不注册为 bean 则容器内 `DashScopeChatModel` 保持唯一，`ChatClientAutoConfiguration` 的 `@ConditionalOnSingleCandidate` 语义不受影响。
+- **被放弃的方案**：① 手写 `RestClient` 调 OpenAI 兼容接口：流式需自研响应式 SSE 解析，成本高易错；② 引入 Resilience4j：新增依赖触碰 D20，且手写状态机是答辩可讲的亮点；③ 熔断状态存 Redis：MVP 单实例部署无必要。
+- **必须记录的取舍**：备1 是 7B 级免费模型，实测首包偶发 15s、生成 322 chunks 约 2.5 分钟、内容质量明显下降——**降级后可用性优先于质量，这是刻意取舍不是缺陷**；健康探测失败仅返回 FAIL **不计入熔断统计**，避免探测流量造成正反馈（探测越失败熔断越开）。
+- **日期**：2026-09-09
+
+## D31. 流式熔断的时机边界 = 首包前可 failover，首包后不重发
+- **决策**：**首包之前**失败可 failover 到备用供应商（用户无感知）；**首包之后**失败不重发（用户已看到一半内容，重发会重复错乱），改为保留已生成部分落库 + 推 SSE `error` 事件 + 计入熔断统计。
+- **理由**：流式输出的不可撤回性。
+- **被放弃的方案**：首包后也 failover 重发（内容重复）、首包后静默截断（用户看到断尾却不知发生了什么）。
+- **日期**：2026-09-09
+
+## D32. 模型失败的落库与错误码口径 = 入口守卫 + resolveErrorCode 按异常类型分派
+- **决策**：① `saveAssistantMessage`/`saveUserMessage` **入口**守卫，content 为 null/blank 时跳过 insert（守卫必须置于入口而非 catch 分支，否则只覆盖单条路径）；② `resolveErrorCode(Throwable)` 作为唯一错误码映射点，沿 cause 链下钻处理包装形态，`ModelUnavailableException`/`StreamInterruptedException` → 3002，其余含 `DataAccessException` → 1999；③ `ChatRequest.question` 契约字段澄清为 `question`（批次 0 集成收口实测澄清，此前启动包示例误写 `message`）；DTO 层 `@NotBlank` 交统筹拍板（SSE 端点 `@Valid` 失败返回 HTTP 200+JSON 会被前端静默吞掉，服务层早退已用 SSE error 1001 正确出口）。
+- **理由**：容器实测中模型全链失败时以 null content 撞 `chat_message.content` 的 NOT NULL 约束，MyBatis-Plus 默认 `NOT_NULL` 字段策略会把 null 字段整个从 INSERT 省略，MySQL 8.4 严格模式报 `Field 'content' doesn't have a default value`，而宽 catch 把该 DB 异常统一报成 3002 **完全掩盖了真因**，耗费整轮排障才定位。
+- **被放弃的方案**：① 给 `content` 列加默认值（掩盖问题且污染语义）；② 关闭 MySQL 严格模式（全局降级，代价过大）；③ 守卫留在 catch 分支（只覆盖单路径，正是本次缺陷根源）。
+- **日期**：2026-09-09
+
+## D33. 测试选型 = JUnit5 + Mockito 纯单测，不引入 Testcontainers
+- **决策**：路 11 关键路径单测采用 JUnit5 + Mockito，**不引入 Testcontainers**。
+- **理由**：避开 D20 版本敏感区与新增依赖；本项目中间件在 VM 内已长期运行，集成验证走真实环境比容器内起一套更接近部署形态。
+- **被放弃的方案**：`@SpringBootTest` + Testcontainers（新增测试依赖需写进根 pom、VM 内跑容器嵌套有额外坑、成本高一个量级）。**同时记录既有实践**：路 7 两轮补刀均用「临时主程序 + 动态代理 Mapper + 反射调用私有方法」验证后删除源码与 class，在 0 测试依赖下取得了 19/19 与 16/16 的断言覆盖——这是本项目的过渡形态，路 11 落地正式单测后应替换。
+- **日期**：2026-09-09
+
+## D34. ReAct Agent + MCP 定位 = 阶段二加分项，可砐
+- **决策**：阶段二的**加分项，可砐**，不进论文核心章节。
+- **理由**：需新建 `cs-agent` 模块、`spring-ai-alibaba` 的 graph/agent 虽随核心 BOM 1.1.2.0 早已 import 但**从未被任何模块实际使用过**、且需模拟业务 API，工期最不可控。
+- **被放弃的方案**：当核心亮点做（工期风险过高，挤占评估体系与检索增强的时间）。
+- **日期**：2026-09-09
+
+## D35. Compose 项目名必须钉死 = name: telecom-cs-rag
+- **决策**：`docker-compose.yml` 保留顶层 `name` 字段并钉死为 `telecom-cs-rag`，同时在 `deploy-guide.md` 写明「compose 项目名决定数据卷前缀，改名等于换库」。
+- **理由**：Compose v2 的项目名优先取 yml 顶层 `name:`、其次取 compose 文件所在**目录名**；批次 0 改造时该字段缺失，在 VM 的 `~/AIBishe` 目录下跑就挂上了全新的 `aibishe_*` 空卷，阶段一的 `telecom-cs-rag_*` 数据被**静默孤立**（数据一条没删，只是再也不会被挂载）。
+- **被放弃的方案**：① 统一改用 `aibishe` 项目名并迁移数据（需 mysqldump + ES 重建索引，成本高于收益）；② 靠「固定在同一个目录跑」的口头约定（换机器/换用户即失效）。
+- **日期**：2026-09-09
+
+## D36. ES/MySQL 一致性方案 = RocketMQ 事务消息补偿（待执行），相应修订 D12
+- **决策**：DEF-029 采用 RocketMQ 事务消息补偿，**相应修订 D12「禁止引入新存储组件」为「禁止引入新存储组件；消息中间件在入库一致性场景下作为例外，须经统筹确认」**。执行时机 = **待 C4（入库异步化）排期时**，批次 0 与批次 1 均不引入。
+- **理由**：`IngestionService.ingest` 的 `@Transactional` 只保 MySQL，回滚后 ES 可能残留 chunk 并被检索命中；outbox 模式虽不加中间件但对「ES 写成功而 MySQL 回滚」这个方向无能为力。
+- **被放弃的方案**：① outbox 本地消息表 + 定时补偿（不加中间件、守 D12，但只能覆盖单向）；② 异步入库 + 重试状态机（最简单，但极端情况仍有不一致窗口）。**注意：本条只是决策记录，批次 0 不落地，`docker-compose.yml` 不得出现 RocketMQ 服务。**
+- **日期**：2026-09-09
+
 ---
 
 ## 待拍板 / 待补充（后续追加）

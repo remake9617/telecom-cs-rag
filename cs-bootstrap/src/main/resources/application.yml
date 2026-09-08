@@ -88,6 +88,7 @@ mybatis-plus:
 
 # ===== 认证（M3：Spring Security + JWT，D17）=====
 # JWT 秘钥走环境变量 JWT_SECRET（绝不能入库）；HS256 要求 >= 32 字节
+# 弱默认值兜底仅为本地开发能启动而保留：启动时的强校验由 ConfigValidation（DEF-030 fail-fast）负责
 cs:
   jwt:
     secret: ${JWT_SECRET:dev-only-cs-server-jwt-secret-key-change-me-in-prod}
@@ -95,6 +96,48 @@ cs:
   # 默认管理员初始密码（仅首次启动播种时生效，公网部署前务必改）
   admin:
     default-password: ${ADMIN_DEFAULT_PASSWORD:admin123}
+  # ===== 配置 fail-fast 安全闸开关（DEF-030，路6）=====
+  # false = 本地宽松模式：缺配置/弱默认值只打 WARN 不终止
+  # true  = 严格模式：发现弱配置直接拒绝启动（公网/生产部署必须置 true；激活 prod/public profile 也会自动严格）
+  strict-config: ${CS_STRICT_CONFIG:false}
+
+# ===== 阶段二预留配置区块（由路6 统一写入；2026-09-06 已落路7 熔断降级键）=====
+# 全部键与 cs-infra-ai AiResilienceProperties 的代码默认值一致（写入目的是可运维性而非功能必需）
+# 路8 实测确认无需新增配置键
+  ai:
+    resilience:
+      enabled: true                        # 总开关：false 时 failover 链收缩为仅主供应商（熔断/超时仍生效）
+      failover-enabled: true               # 多供应商 failover 开关：false 时只用主供应商
+      call-timeout-ms: 30000               # 同步调用整体超时（覆盖首包+全部 token 生成）
+      connect-timeout-ms: 5000             # TCP 建连超时：连不上快速切下一供应商
+      first-token-timeout-ms: 15000        # 流式首包探测阈值：超时判不健康并 failover（流式唯一可靠切换时机）
+      retry:
+        max-attempts: 3                    # 同一供应商最大尝试次数（含首次）；流式不同供应商重试，直接切下一家
+        backoff-base-ms: 500               # 指数退避基数：第 n 次重试等 base * 2^(n-1)
+        backoff-max-ms: 2000               # 单次退避上限
+      circuit:
+        window-size: 10                    # 滑动窗口大小（最近 N 次调用样本）
+        min-calls: 5                       # 最小样本数：不足时不判失败率（避免冷启动误熔断）
+        failure-rate-threshold: 0.5        # 失败率阈值（0~1）：窗口内失败率 >= 该值则 OPEN
+        open-duration-ms: 30000            # OPEN 持续时长，到期转 HALF_OPEN 放行试探
+        half-open-max-trials: 3            # HALF_OPEN 并发试探许可数
+        half-open-success-threshold: 2     # HALF_OPEN → CLOSED 所需试探成功数
+      # ===== 备用供应商矩阵（OpenAI 兼容；api-key 一律 ${XXX:} 占位，绝不写真实值）=====
+      # apiKey 为空则该供应商自动跳过注册（failover 链缩短而非报错）
+      # chatPath 为各供应商 OpenAI 兼容路径，为代码内 final 默认值（不可 yml 覆盖）：
+      #   siliconflow=/v1/chat/completions  zhipu=/v4/chat/completions  deepseek=/v1/chat/completions
+      siliconflow:
+        base-url: https://api.siliconflow.cn
+        api-key: ${SILICONFLOW_API_KEY:}
+        model: Qwen/Qwen2.5-7B-Instruct
+      zhipu:
+        base-url: https://open.bigmodel.cn/api/paas
+        api-key: ${ZHIPU_API_KEY:}
+        model: glm-4-flash
+      deepseek:
+        base-url: https://api.deepseek.com
+        api-key: ${DEEPSEEK_API_KEY:}
+        model: deepseek-chat
 
 # ===== 说明 =====
 # 1) 本文件为 M0 骨架基础配置；M1 补 ES/MySQL、M2 补 Redis/会话记忆、M3 补 MyBatis-Plus 分页与 JWT 认证。

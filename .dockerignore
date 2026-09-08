@@ -1,0 +1,17 @@
+# =====================================================================
+# Docker 构建上下文瘦身（路6 / B1）
+# backend/frontend 两个 Dockerfile 的构建上下文都是仓库根目录；
+# 不排除 node_modules / target / .git 的话，每次构建要把数百 MB 传给 docker daemon。
+# =====================================================================
+
+**/node_modules
+**/target
+**/dist
+.git
+.idea
+.qoder
+docs
+test-data
+contract
+sql
+*.log

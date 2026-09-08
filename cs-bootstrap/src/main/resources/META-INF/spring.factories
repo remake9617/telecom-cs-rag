@@ -1,0 +1,3 @@
+# 配置 fail-fast 安全闸（DEF-030）：在环境准备阶段、任何 Bean 创建前校验弱配置
+# 说明：EnvironmentPostProcessor 不走组件扫描，必须经 Spring Boot 此约定文件注册
+org.springframework.boot.env.EnvironmentPostProcessor=com.cs.config.ConfigValidation

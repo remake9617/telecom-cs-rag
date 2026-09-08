@@ -1,8 +1,13 @@
 # =====================================================================
-# 电信运营商智能客服系统 —— 本地/VM 中间件编排（D14）
-# 在 Ubuntu VM 内执行：docker compose up -d
-# 说明：Compose v2 语法（无需 version 字段）；密码等敏感值走同目录 .env
-# 资源按 4核/8G VM 调优：ES heap 限 1G，单节点，关闭 xpack 安全简化本地
+# 电信运营商智能客服系统 —— 全栈编排（路6 / B1，闭环 DEF-052）
+# 在 Ubuntu VM 内执行：docker compose up -d --build
+# 说明：Compose v2 语法（无需 version 字段）；密码等敏感值走同目录 .env（绝不进镜像）
+#
+# 【两套拓扑的区别，改配置前必读】
+#   拓扑 A（本地开发）：后端跑 Windows、中间件跑 VM —— .env 里 MYSQL_HOST/ES_URIS/REDIS_HOST
+#     填 VM IP(192.168.25.129)，宿主端口 13306/9200/16379。不要改 .env！
+#   拓扑 B（全栈容器化，本文件）：backend 与中间件同在 compose 网络 —— backend.environment
+#     里显式覆盖为服务名 mysql/elasticsearch/redis + 容器内端口 3306/9200/6379。
 # =====================================================================
 
 services:
@@ -72,6 +77,89 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+
+  # ===================================================================
+  # ES 索引初始化（一次性任务，跑完即退出）：闭环 DEF-052「换机必须人工记得跑 init-index.sh」
+  # 复用上面已构建的 ES 镜像（自带 curl/bash），幂等：索引已存在则脚本自动跳过
+  # ===================================================================
+  es-init:
+    image: cs-elasticsearch:8.18.8-ik
+    container_name: cs-es-init
+    restart: "no"
+    entrypoint:
+      - bash
+      - -c
+      # 带重试：ES healthcheck 刚过时索引写入偶发未就绪，失败重试最多 30 次 x 5s
+      - for i in $$(seq 1 30); do bash /scripts/init-index.sh && exit 0; echo "[es-init] retry $$i"; sleep 5; done; exit 1
+    environment:
+      ES_HOST: http://elasticsearch:9200   # compose 网络内服务名（不是 VM IP）
+    volumes:
+      - ./deploy/elasticsearch:/scripts:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  # ===================================================================
+  # 后端（路6 / B1）：多阶段构建产物，密钥经 env_file 运行期注入，绝不进镜像
+  # ===================================================================
+  backend:
+    build:
+      context: .                        # 仓库根目录（Maven 多模块从根 pom 聚合）
+      dockerfile: deploy/backend/Dockerfile
+    image: cs-backend:latest
+    container_name: cs-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # --- 拓扑 B 覆盖：容器网络内用服务名 + 容器内端口（不是 .env 里的 VM IP/宿主映射端口）---
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      ES_URIS: http://elasticsearch:9200
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      # --- 时区双保险：只设 TZ 对 JVM 不够，必须同时 -Duser.timezone，
+      #     否则时间字段「格式对但值差 8 小时」（契约要求东八区）---
+      TZ: Asia/Shanghai
+      JAVA_OPTS: "-Xms256m -Xmx768m -Duser.timezone=Asia/Shanghai"
+      # --- B5 配置 fail-fast（DEF-030）：默认不拦、由 .env 一键可开 ---
+      # 强烈建议：VM/生产环境在 .env 里置 CS_STRICT_CONFIG=true 开启严格模式。
+      # 若开启后启动失败并打印「配置安全闸」清单，说明 .env 里有弱配置，
+      # 按清单逐项改即可（清单只列键名，绝不回显密钥值）；改完 docker compose up -d 重试。
+      CS_STRICT_CONFIG: ${CS_STRICT_CONFIG:-false}
+    # 不映射 8080 到宿主：避免与本地开发后端抢端口，对外统一走 nginx(80) 同源入口
+    depends_on:
+      mysql:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      es-init:
+        condition: service_completed_successfully
+    healthcheck:
+      # A 轮新增的无认证、不发起模型调用的存活探针，正是为此准备
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/api/health/ping || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  # ===================================================================
+  # 前端（路6 / B1）：nginx 同源反代，全站唯一公网入口
+  # ===================================================================
+  frontend:
+    build:
+      context: .
+      dockerfile: deploy/frontend/Dockerfile
+    image: cs-frontend:latest
+    container_name: cs-frontend
+    restart: unless-stopped
+    ports:
+      - "8088:80"      # 用户拍板：宿主 80 可能被占用，改用 8088；访问地址 http://<ip>:8088
+    depends_on:
+      backend:
+        condition: service_healthy
 
 volumes:
   mysql-data:

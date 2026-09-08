@@ -36,6 +36,11 @@ import java.util.stream.Collectors;
  * ③ kNN + match 是 ES client 最成熟的 API。</p>
  *
  * <p>RRF 公式：score(d) = Σ_over_channels 1/(k + rank_channel(d))，只用排名不用原始分，规避量纲差异。</p>
+ *
+ * <p><b>检索侧 embedding 失败的降级（路7 收敛）</b>：检索侧没有向量就没法 kNN，无法像 rerank
+ * 那样等价替代，但也不应像原实现那样整链 catch 返回空——空结果会被上游误判为「无召回」而
+ * 建工单转人工。正确行为是退化为<b>纯 BM25 检索</b>（单通道 RRF 退化为原序）并记录日志，
+ * 召回质量下降但服务可用。</p>
  */
 @Slf4j
 @Service
@@ -55,11 +60,20 @@ public class RetrievalServiceImpl implements RetrievalService {
         try {
             String query = request.getQuery();
 
-            // 1) query 向量化（bge-m3 → 1024 维）
-            float[] queryVector = embeddingModel.embed(query);
+            // 1) query 向量化（bge-m3 → 1024 维）。检索侧 embedding 失败无法降级成等价物
+            //    （没有向量就没法 kNN），退化为纯 BM25 检索并记录，而不是返回空（空会被上游
+            //    误判为「无召回」而建工单转人工）
+            float[] queryVector = null;
+            try {
+                queryVector = embeddingModel.embed(query);
+            } catch (Exception embedEx) {
+                log.warn("query 向量化失败，退化为纯 BM25 检索（向量通道跳过）: {}", embedEx.getMessage());
+            }
 
             // 2) 向量 kNN 召回 + 3) BM25 关键词召回（MVP 单知识库，暂不按 kb_id 过滤；多库时加 term filter）
-            List<RetrievedChunk> vectorHits = knnSearch(queryVector, request.getVectorTopN());
+            List<RetrievedChunk> vectorHits = queryVector != null
+                    ? knnSearch(queryVector, request.getVectorTopN())
+                    : List.of();
             List<RetrievedChunk> keywordHits = bm25Search(query, request.getKeywordTopN());
 
             // 4) RRF 融合去重

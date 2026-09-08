@@ -1,7 +1,7 @@
 package com.cs.qa.service;
 
+import com.cs.infra.ai.resilience.ChatModelFacade;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 
 /**
@@ -23,10 +23,10 @@ public class IntentService {
     public static final String INTENT_TICKET = "TICKET";
     public static final String INTENT_CHITCHAT = "CHITCHAT";
 
-    private final ChatClient chatClient;
+    private final ChatModelFacade chatModelFacade;
 
-    public IntentService(ChatClient.Builder builder) {
-        this.chatClient = builder.build();
+    public IntentService(ChatModelFacade chatModelFacade) {
+        this.chatModelFacade = chatModelFacade;
     }
 
     /** 分类 prompt：给出类别定义 + 强约束只输出类别代码 */
@@ -49,7 +49,9 @@ public class IntentService {
      */
     public String classify(String query) {
         try {
-            String result = chatClient.prompt().user(INTENT_PROMPT.formatted(query)).call().content();
+            // 走统一封装层（超时/重试/熔断/failover）；全供应商失败时 facade 抛
+            // ModelUnavailableException，由下方 catch 降级为 KB（降级目标保持不变）
+            String result = chatModelFacade.call(null, INTENT_PROMPT.formatted(query));
             if (result != null) {
                 String r = result.trim().toUpperCase();
                 if (r.contains(INTENT_TICKET)) return INTENT_TICKET;

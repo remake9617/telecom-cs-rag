@@ -1,8 +1,9 @@
 package com.cs.qa.service;
 
+import com.cs.infra.ai.resilience.ChatModelFacade;
 import com.cs.knowledge.dto.RetrievedChunk;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -21,13 +22,10 @@ import java.util.List;
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class AnswerGenerateService {
 
-    private final ChatClient chatClient;
-
-    public AnswerGenerateService(ChatClient.Builder builder) {
-        this.chatClient = builder.build();
-    }
+    private final ChatModelFacade chatModelFacade;
 
     /** system prompt：客服角色 + grounding 硬约束 + 引用标注 + 无资料兜底 */
     private static final String SYSTEM_PROMPT = """
@@ -58,11 +56,13 @@ public class AnswerGenerateService {
      */
     public Flux<ChatResponse> generateStream(String query, List<RetrievedChunk> chunks) {
         String userPrompt = buildUserPrompt(query, chunks);
-        return chatClient.prompt()
-                .system(SYSTEM_PROMPT)
-                .user(userPrompt)
-                .stream()
-                .chatResponse();
+        // 走统一封装层：超时/首包探测/熔断/多供应商 failover 全部收敛在 facade。
+        // failover 只发生在首包之前（用户无感知）；首包之后流中途断开时 facade 抛
+        // StreamInterruptedException（不 failover，避免已推送内容重复），由 QaService 的
+        // catch 保留已生成部分并落库 + 推 error 事件。
+        // tokenCost 口径（D28）不变：仍从流式末 chunk 的 metadata.usage.totalTokens 提取，
+        // failover 到备用供应商时同样成立（实测硅基流动流式回传 usage）。
+        return chatModelFacade.stream(SYSTEM_PROMPT, userPrompt);
     }
 
     /** 组装 user prompt：带序号的参考资料 + 用户问题 */

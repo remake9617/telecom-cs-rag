@@ -163,6 +163,17 @@ public class QaService {
                     });
         } catch (Exception e) {
             log.error("流式生成失败", e);
+            // 流式中途失败（首包后断开，facade 抛 StreamInterruptedException 等）：已生成的部分
+            // 内容不能静默丢弃——保留落库并写记忆，保证历史回放与上下文连续；已推给前端的
+            // message 分片不重发，error 事件告知本次回答不完整。首包前失败不会进到这里
+            // （facade 已在首包前 failover，全失败抛 ModelUnavailableException 时 answer 为空）。
+            // tokenCost 若已从流式 chunk 拿到则随部分内容一并落库（允许 null，D28 口径不变）。
+            String partial = answer.toString();
+            if (!partial.isBlank()) {
+                Long partialMsgId = saveAssistantMessage(convId, partial, rewritten, intent, tokenCostRef[0]);
+                saveReferences(partialMsgId, chunks);
+                memoryService.append(convId, "assistant", partial);
+            }
             sendEvent(emitter, "error", Map.of("code", 3002, "message", "答案生成失败"));
             emitter.complete();
             return;

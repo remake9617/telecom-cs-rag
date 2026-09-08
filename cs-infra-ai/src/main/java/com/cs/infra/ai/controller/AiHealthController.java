@@ -2,8 +2,9 @@ package com.cs.infra.ai.controller;
 
 import com.cs.framework.common.R;
 import com.cs.framework.security.SecurityUtils;
+import com.cs.infra.ai.resilience.ChatModelFacade;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -26,15 +27,11 @@ import java.util.Map;
 @Slf4j
 @RestController
 @RequestMapping("/api/health")
+@RequiredArgsConstructor
 public class AiHealthController {
 
-    private final ChatClient chatClient;
+    private final ChatModelFacade chatModelFacade;
     private final EmbeddingModel embeddingModel;
-
-    public AiHealthController(ChatClient.Builder chatClientBuilder, EmbeddingModel embeddingModel) {
-        this.chatClient = chatClientBuilder.build();
-        this.embeddingModel = embeddingModel;
-    }
 
     /**
      * 无认证存活探针——不发起任何模型调用，仅证明应用已启动且可响应 HTTP 请求。
@@ -59,9 +56,10 @@ public class AiHealthController {
         SecurityUtils.requireAdmin();
         Map<String, Object> result = new LinkedHashMap<>();
 
-        // 1) Chat 联通（阿里 qwen-plus）
+        // 1) Chat 联通（阿里 qwen-plus）：走 facade.probe()——只打主供应商且不计熔断
+        // （探测流量计入熔断会造成正反馈：探测越失败熔断越开、熔断开了探测更失败）
         try {
-            String reply = chatClient.prompt().user("用一句话介绍你自己").call().content();
+            String reply = chatModelFacade.probe(null, "用一句话介绍你自己");
             result.put("chat", "OK");
             result.put("chatModel", "qwen-plus");
             result.put("chatReply", reply);

@@ -1,7 +1,12 @@
 # =====================================================================
 # 电信运营商智能客服系统 —— 全栈编排（路6 / B1，闭环 DEF-052）
 # 在 Ubuntu VM 内执行：docker compose up -d --build
-# 说明：Compose v2 语法（无需 version 字段）；密码等敏感值走同目录 .env（绝不进镜像）
+#
+# 【项目名 = 数据卷前缀，改名等于换库（P1 坑，勿动）】
+#   下方 name: telecom-cs-rag 是阶段一建库时的 Compose 项目名，决定了数据卷前缀
+#   （telecom-cs-rag_mysql-data 等）。改它 = 换一套全新空卷（阶段一数据会被静默孤立）。
+#   历史教训：项目名默认取目录名，目录从 telecom-cs-rag 改为 AIBishe 后卷即被孤立；
+#   显式钉死 name 后不再受目录名影响。
 #
 # 【两套拓扑的区别，改配置前必读】
 #   拓扑 A（本地开发）：后端跑 Windows、中间件跑 VM —— .env 里 MYSQL_HOST/ES_URIS/REDIS_HOST
@@ -9,6 +14,7 @@
 #   拓扑 B（全栈容器化，本文件）：backend 与中间件同在 compose 网络 —— backend.environment
 #     里显式覆盖为服务名 mysql/elasticsearch/redis + 容器内端口 3306/9200/6379。
 # =====================================================================
+name: telecom-cs-rag
 
 services:
   mysql:
@@ -165,3 +171,13 @@ volumes:
   mysql-data:
   es-data:
   redis-data:
+
+# 【MTU 修复（待 VM 实测确认后生效）】
+# 症状：容器出网到模型供应商间歇性 Connection reset（小探针包成功、大请求体失败），
+# 典型原因是宿主出口链路（PPPoE/NAT）MTU < 1500 且 ICMP 分片_needed 被吞，大包黑洞。
+# 显式把 compose 网络降到 1400 规避；若 VM 实测确认无 MTU 问题，可整段删除（无副作用）。
+networks:
+  default:
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: "1400"

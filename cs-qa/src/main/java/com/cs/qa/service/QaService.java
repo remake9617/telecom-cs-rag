@@ -1,5 +1,7 @@
 package com.cs.qa.service;
 
+import com.cs.infra.ai.resilience.ModelUnavailableException;
+import com.cs.infra.ai.resilience.StreamInterruptedException;
 import com.cs.knowledge.dto.RetrievalRequest;
 import com.cs.knowledge.dto.RetrievedChunk;
 import com.cs.knowledge.service.RetrievalService;
@@ -78,8 +80,10 @@ public class QaService {
             try {
                 handleChat(userId, conversationId, question, emitter);
             } catch (Exception e) {
-                log.error("问答流程异常", e);
-                sendEvent(emitter, "error", Map.of("code", 3002, "message", "问答处理失败"));
+                int code = resolveErrorCode(e);
+                log.error("问答流程异常（error 事件按 {} 上报，不再统一映射 3002 掩盖非模型根因）", code, e);
+                sendEvent(emitter, "error", Map.of("code", code, "message",
+                        code == 3002 ? "问答处理失败" : "系统内部错误，请稍后重试"));
                 emitter.complete();
             }
         });
@@ -90,6 +94,17 @@ public class QaService {
      * 问答主链路（异步线程内执行）。userId 沿用 {@link #chatStream} 的契约，非 null。
      */
     private void handleChat(Long userId, Long conversationId, String question, SseEmitter emitter) {
+        // ⓪ 请求载荷守卫（路7 补刀2）：question 为空时整条链路无意义，且 saveUserMessage 落库
+        // 会因 chat_message.content NOT NULL 且无默认值炸出 DataIntegrityViolationException
+        // （复用既有会话时 resolveConversation 不触碰 question，不会被 NPE 兜住），
+        // 该 DB 异常曾被外层 catch 误判成 3002 模型失败。尽早短路，错误码用 1001 参数错误。
+        if (question == null || question.isBlank()) {
+            log.warn("收到空问题，跳过落库与模型链路: userId={}, conversationId={}", userId, conversationId);
+            sendEvent(emitter, "error", Map.of("code", 1001, "message", "问题不能为空"));
+            emitter.complete();
+            return;
+        }
+
         // ① 会话：复用或新建
         Long convId = resolveConversation(userId, conversationId, question);
 
@@ -162,19 +177,22 @@ public class QaService {
                         }
                     });
         } catch (Exception e) {
-            log.error("流式生成失败", e);
-            // 流式中途失败（首包后断开，facade 抛 StreamInterruptedException 等）：已生成的部分
-            // 内容不能静默丢弃——保留落库并写记忆，保证历史回放与上下文连续；已推给前端的
-            // message 分片不重发，error 事件告知本次回答不完整。首包前失败不会进到这里
-            // （facade 已在首包前 failover，全失败抛 ModelUnavailableException 时 answer 为空）。
-            // tokenCost 若已从流式 chunk 拿到则随部分内容一并落库（允许 null，D28 口径不变）。
-            String partial = answer.toString();
-            if (!partial.isBlank()) {
-                Long partialMsgId = saveAssistantMessage(convId, partial, rewritten, intent, tokenCostRef[0]);
-                saveReferences(partialMsgId, chunks);
-                memoryService.append(convId, "assistant", partial);
+            // 异常分类分派（路7 补刀2）：模型链路失败 → 3002；其余（DB 约束、ES、Redis 等系统异常）
+            // → 1999，绝不把 DataIntegrityViolationException 这类数据库异常统一映射成「模型失败」——
+            // 容器实测中该掩盖让排障整轮才定位到真因是 DB 约束而非模型。
+            int code = resolveErrorCode(e);
+            if (code == 3002) {
+                log.error("流式生成失败（模型链路：重试/failover 已耗尽）", e);
+            } else {
+                log.error("流式问答发生非模型异常，按 1999 上报", e);
             }
-            sendEvent(emitter, "error", Map.of("code", 3002, "message", "答案生成失败"));
+            // 首包后断流：已生成的部分内容不能静默丢弃——保留落库并写记忆，保证历史回放与
+            // 上下文连续；已推给前端的 message 分片不重发，error 事件告知本次回答不完整。
+            // 部分内容为空则什么都不落（saveAssistantMessage 入口守卫双保险）。
+            // tokenCost 若已从流式 chunk 拿到则随部分内容一并落库（允许 null，D28 口径不变）。
+            trySavePartial(convId, answer.toString(), rewritten, intent, chunks, tokenCostRef[0]);
+            sendEvent(emitter, "error", Map.of("code", code, "message",
+                    code == 3002 ? "答案生成失败" : "系统内部错误，请稍后重试"));
             emitter.complete();
             return;
         }
@@ -183,8 +201,12 @@ public class QaService {
         String answerText = answer.toString();
         Integer tokenCost = tokenCostRef[0];
         Long msgId = saveAssistantMessage(convId, answerText, rewritten, intent, tokenCost);
-        saveReferences(msgId, chunks);
-        memoryService.append(convId, "assistant", answerText);
+        if (msgId != null) {
+            saveReferences(msgId, chunks);
+            memoryService.append(convId, "assistant", answerText);
+        }
+        // msgId 为 null 只发生在「流正常完成但零文本」的病态场景：入口守卫跳过落库，done 载荷
+        // 的 messageId 为 null——前端 typeof 守卫使点赞点踩静默变灰，可接受且排障有 warn 日志。
         // done 事件必须最后发（ticket_hint 已在 finishWithText 分支先于 done；正常问答分支无 ticket_hint）
         sendEvent(emitter, "done", donePayload(convId, msgId, tokenCost));
         emitter.complete();
@@ -229,6 +251,10 @@ public class QaService {
     }
 
     private void saveUserMessage(Long convId, String content) {
+        if (content == null || content.isBlank()) {
+            log.warn("user 消息内容为空，跳过落库（防 chat_message.content NOT NULL 约束报错）: convId={}", convId);
+            return;
+        }
         ChatMessage m = new ChatMessage();
         m.setConversationId(convId);
         m.setRole("user");
@@ -238,6 +264,15 @@ public class QaService {
     }
 
     private Long saveAssistantMessage(Long convId, String content, String rewritten, String intent, Integer tokenCost) {
+        // 入口守卫（路7 补刀2）：content 为空绝不 insert —— MyBatis-Plus NOT_NULL 字段策略会把
+        // null 字段从 INSERT 语句中整个省略，chat_message.content 是 NOT NULL 且无默认值，
+        // MySQL 8.4 严格模式直接抛 DataIntegrityViolationException，曾被外层 catch 误判成
+        // 3002 模型失败（排障被误导一整轮）。守卫放在入口而非某个 catch 分支，
+        // 对本方法的全部调用方（⑩ 正常路径 / finishWithText / 部分内容落库）统一生效。
+        if (content == null || content.isBlank()) {
+            log.warn("assistant 消息内容为空，跳过落库: convId={}, intent={}", convId, intent);
+            return null;
+        }
         ChatMessage m = new ChatMessage();
         m.setConversationId(convId);
         m.setRole("assistant");
@@ -297,6 +332,48 @@ public class QaService {
         payload.put("messageId", messageId);
         payload.put("tokenCost", tokenCost);   // 允许 null（HashMap 容忍），前端 typeof==='number' 守卫自动隐藏标签
         return payload;
+    }
+
+    /**
+     * 流式失败时保留已生成的部分内容（非空才落库），供异常分派后的 catch 分支复用。
+     *
+     * <p>为什么连引用与记忆一起落：历史回放与多轮上下文都依赖 assistant 消息存在；
+     * 部分内容为空则什么都不做（{@link #saveAssistantMessage} 入口守卫双保险）。</p>
+     */
+    private void trySavePartial(Long convId, String partial, String rewritten, String intent,
+                                List<RetrievedChunk> chunks, Integer tokenCost) {
+        if (partial == null || partial.isBlank()) {
+            return;
+        }
+        Long partialMsgId = saveAssistantMessage(convId, partial, rewritten, intent, tokenCost);
+        if (partialMsgId != null) {
+            saveReferences(partialMsgId, chunks);
+        }
+        memoryService.append(convId, "assistant", partial);
+    }
+
+    /**
+     * 按异常类型分派 SSE {@code error} 事件错误码（路7 补刀2）：模型链路异常
+     * （{@link ModelUnavailableException} / {@link StreamInterruptedException}，含被包装为
+     * cause 的形态）→ 3002；其余一切（DataIntegrityViolationException 等 DataAccessException、
+     * ES/Redis 异常等）→ 1999，与 GlobalExceptionHandler 的系统兜底同口径。
+     *
+     * <p>价值不在错误码本身，而在排障时不被误导：统一 3002 会让「数据库约束炸了」被当成
+     * 「模型不可用」排查一整轮（容器实测教训）。</p>
+     */
+    static int resolveErrorCode(Throwable e) {
+        Throwable cur = e;
+        while (cur != null) {
+            if (cur instanceof ModelUnavailableException || cur instanceof StreamInterruptedException) {
+                return 3002;
+            }
+            Throwable next = cur.getCause();
+            if (next == cur) {
+                break;
+            }
+            cur = next;
+        }
+        return 1999;
     }
 
     private void sendEvent(SseEmitter emitter, String name, Object data) {

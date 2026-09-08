@@ -65,9 +65,15 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/auth/register",
                                 "/api/auth/login",
+                                "/api/auth/logout",
                                 "/api/health/ping",
                                 "/error"
                         ).permitAll()
+                        // DEF-092：logout 也放行——契约要求登出幂等（重复登出/已过期 token 均不报错），
+                        // 但已拉黑的 token 会被 JWT 过滤器拦下，永远到不了 Controller，幂等无从谈起。
+                        // 安全性论证：① Controller 直接从 Authorization 头取 token 写黑名单，
+                        //   不依赖认证上下文；② 攻击者想“帮别人登出”必须先持有该 token，
+                        //   而持有者本就能自行登出，无新增攻击面；③ 重复写黑名单是幂等操作。
                         .anyRequest().authenticated())
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(authenticationEntryPoint)

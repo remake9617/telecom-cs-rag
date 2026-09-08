@@ -172,12 +172,6 @@ volumes:
   es-data:
   redis-data:
 
-# 【MTU 修复（待 VM 实测确认后生效）】
-# 症状：容器出网到模型供应商间歇性 Connection reset（小探针包成功、大请求体失败），
-# 典型原因是宿主出口链路（PPPoE/NAT）MTU < 1500 且 ICMP 分片_needed 被吞，大包黑洞。
-# 显式把 compose 网络降到 1400 规避；若 VM 实测确认无 MTU 问题，可整段删除（无副作用）。
-networks:
-  default:
-    driver: bridge
-    driver_opts:
-      com.docker.network.driver.mtu: "1400"
+# 注：曾预置 networks.default.driver_opts MTU=1400，集成收口实测（容器 1400/宿主 1500，
+# Docker 默认 bridge MTU 本会继承宿主，即两者原本一致）证伪 MTU 假设：间歇 Connection reset
+# 为供应商侧抖动，已由路7 重试机制消化（DEF-087 ✗ 不修），故回退预置，避免无依据改动。

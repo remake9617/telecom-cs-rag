@@ -116,7 +116,8 @@ export interface TrendPoint {
 
 /** event: done 负载（后端已补发 tokenCost，取不到时为 null；保留可选以防御异常路径漏发，缺失时前端不展示 token 标签） */
 export interface StreamDoneInfo {
-  messageId: number;
+  /** content 为空未落库时为 null（DEF-089，路7 入口守卫的合法路径），此时该条消息不可点赞属预期；chatStore 有 ?? tempId 防御 */
+  messageId: number | null;
   conversationId: number;
   tokenCost?: number;
 }

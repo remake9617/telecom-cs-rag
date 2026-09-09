@@ -103,7 +103,7 @@ cs:
 
 # ===== 阶段二预留配置区块（由路6 统一写入；2026-09-06 已落路7 熔断降级键）=====
 # 全部键与 cs-infra-ai AiResilienceProperties 的代码默认值一致（写入目的是可运维性而非功能必需）
-# 路8 实测确认无需新增配置键
+# 路8 实测确认无需新增配置键；Wave 2 路10 新增 cs.ratelimit 块（见下方独立区块）
   ai:
     resilience:
       enabled: true                        # 总开关：false 时 failover 链收缩为仅主供应商（熔断/超时仍生效）
@@ -138,6 +138,17 @@ cs:
         base-url: https://api.deepseek.com
         api-key: ${DEEPSEEK_API_KEY:}
         model: deepseek-chat
+
+  # ===== 限流（阶段二批次 0 路10：拒绝式 + Redis Lua 滑动窗口，按 userId+端点 维度）=====
+  # 首要保护对象是流式问答：每次调用都消耗付费模型额度，是最易被刷、最该限的端点。
+  # 阈值依据：人工客服场景单用户正常连续提问远低于 10 次/分钟；10/min 足以覆盖真实使用、
+  # 又能挡住脚本刷量。覆盖方式：在下方 rules 里按注解 name 覆盖（不配置则用注解默认值）。
+  ratelimit:
+    enabled: true                         # 总开关：false 时所有 @RateLimit 直通（压测/联调用）
+    rules:
+      qa-chat-stream:                     # 对应 @RateLimit(name = "qa-chat-stream")
+        window-seconds: 60                # 滑动窗口长度（秒）
+        max-requests: 10                  # 窗口内每用户最大请求数，超限返回 SSE error(1005)
 
 # ===== 说明 =====
 # 1) 本文件为 M0 骨架基础配置；M1 补 ES/MySQL、M2 补 Redis/会话记忆、M3 补 MyBatis-Plus 分页与 JWT 认证。

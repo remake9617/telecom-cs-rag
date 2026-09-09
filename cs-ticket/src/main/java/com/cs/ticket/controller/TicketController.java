@@ -2,7 +2,9 @@ package com.cs.ticket.controller;
 
 import com.cs.framework.common.PageVO;
 import com.cs.framework.common.R;
+import com.cs.framework.idempotent.Idempotent;
 import com.cs.framework.security.SecurityUtils;
+import com.cs.ticket.idempotent.TicketIdempotentReplay;
 import com.cs.ticket.dto.TicketCreateRequest;
 import com.cs.ticket.dto.TicketReplyRequest;
 import com.cs.ticket.entity.Ticket;
@@ -42,8 +44,15 @@ public class TicketController {
      * <p>返回 VO 统一走 {@link TicketService#toVO(Ticket)}，不在 Controller 内手拼字段：
      * 手拼曾造成本端点漏发 {@code createdAt} 等契约字段（DEF-016），
      * 而其余三个端点（mine/list/reply）字段完整，形成同一 VO 两种口径。</p>
+     *
+     * <p>幂等（路10）：同一 userId 在 60 秒内对同一 conversationId+question 重复提交，
+     * 返回既有工单而非报错/建第二张（详见 {@link Idempotent} 与 {@link TicketIdempotentReplay}）；
+     * {@code resultId} 从返回值取 {@code #result.data.id} 回写进 Redis 占位 key。</p>
      */
     @PostMapping
+    @Idempotent(prefix = "idem:ticket", ttlSeconds = 60, replay = TicketIdempotentReplay.class,
+            key = "(#request.conversationId ?: '') + '|' + #request.question",
+            resultId = "#result.data.id")
     public R<TicketVO> create(@Valid @RequestBody TicketCreateRequest request) {
         Long userId = SecurityUtils.requireUserId();
         Ticket ticket = ticketService.createTicket(

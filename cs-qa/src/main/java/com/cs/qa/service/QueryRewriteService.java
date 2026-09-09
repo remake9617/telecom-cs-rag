@@ -56,8 +56,17 @@ public class QueryRewriteService {
         if (memory.isEmpty()) {
             return query;   // 首轮无历史，无需重写
         }
+        // role=summary（路10 会话记忆摘要压缩产生的特殊轮次）单独标注，
+        // 不能落到「客服」——它不是客服说过的话，而是早期上下文的压缩体
         String history = memory.stream()
-                .map(t -> ("user".equals(t.getRole()) ? "用户" : "客服") + ": " + t.getContent())
+                .map(t -> {
+                    String label = switch (t.getRole()) {
+                        case "user" -> "用户";
+                        case ConversationMemoryService.ROLE_SUMMARY -> "【早期对话摘要】";
+                        default -> "客服";
+                    };
+                    return label + ": " + t.getContent();
+                })
                 .collect(Collectors.joining("\n"));
         try {
             String prompt = REWRITE_PROMPT.formatted(history, query);

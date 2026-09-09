@@ -28,5 +28,16 @@
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-core</artifactId>
         </dependency>
+        <!-- 限流/幂等注解的 AOP 切面（路10）：Boot 官方 starter，版本由 parent BOM 管理，已报备 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+        <!-- 限流（Redis Lua 滑动窗口）与幂等（SET NX EX 占位）的 Redis 访问（路10）：
+             Boot 官方 starter，cs-qa/cs-system 已用同一 starter，版本由 parent BOM 管理，已报备 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
     </dependencies>
 </project>

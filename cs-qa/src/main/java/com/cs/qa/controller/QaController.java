@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.cs.framework.common.ErrorCode;
 import com.cs.framework.common.R;
 import com.cs.framework.exception.BizException;
+import com.cs.framework.ratelimit.RateLimit;
 import com.cs.framework.security.LoginUser;
 import com.cs.framework.security.SecurityUtils;
 import com.cs.knowledge.entity.KbDocument;
@@ -63,7 +64,14 @@ public class QaController {
      */
     private final KbDocumentMapper kbDocumentMapper;
 
-    /** 流式问答（SSE）：POST + text/event-stream，前端用 fetch+ReadableStream 消费 */
+    /**
+     * 流式问答（SSE）：POST + text/event-stream，前端用 fetch+ReadableStream 消费。
+     *
+     * <p>限流（路10）：每次调用都消耗付费模型额度，是全仓最该保护的端点——
+     * 拒绝式滑动窗口 60s/10 次（yml 可覆盖），超限直接以 SSE error(1005) 事件拒绝、
+     * 不进入任何业务与模型链路（详见 {@link RateLimit}）。</p>
+     */
+    @RateLimit(name = "qa-chat-stream", windowSeconds = 60, maxRequests = 10)
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chatStream(@RequestBody ChatRequest request) {
         return qaService.chatStream(SecurityUtils.requireUserId(), request.getConversationId(), request.getQuestion());

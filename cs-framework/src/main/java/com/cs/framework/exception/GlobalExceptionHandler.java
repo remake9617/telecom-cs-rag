@@ -7,6 +7,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
@@ -17,6 +18,9 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
  *   <li>{@link MethodArgumentNotValidException}：参数校验失败，返回 1001 + 具体字段信息</li>
  *   <li>{@link NoResourceFoundException}：未匹配的 /api/** 路径（客户端 URL 写错），返回 1004，
  *       不得落入兜底 1999（DEF-085：1999 暗示服务端内部错误，会误导排障方向）</li>
+ *   <li>{@link AsyncRequestNotUsableException}：客户端断开导致异步请求不可用（SSE 中断的
+ *       必然伴生现象，路10 实测发现），降为 warn——响应已无法送达，按 1999 error 刷堆栈
+ *       只会掩盖真正的服务端异常</li>
  *   <li>其他 {@link Exception}：未预期错误，error 级日志（含堆栈），对外统一返回 1999，不泄露内部细节</li>
  * </ul>
  */
@@ -52,6 +56,18 @@ public class GlobalExceptionHandler {
     public R<Void> handleNoResourceFound(NoResourceFoundException e) {
         log.warn("请求路径不存在: {}", e.getResourcePath());
         return R.fail(ErrorCode.NOT_FOUND);
+    }
+
+    /**
+     * 客户端断开导致的异步请求不可用（路10 DEF-081 实测发现）：SSE 中途断开时，容器错误派发
+     * 会把该异常送进异常解析器，若落到下方兜底会以 ERROR + 全堆栈刷屏——但连接已死、响应无法
+     * 送达，这是断开的正常伴生现象而非服务端故障（QaService 的取消联动已另行 info 留痕）。
+     * 返回值仅保持 R 形状，实际不会到达任何客户端。
+     */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public R<Void> handleAsyncNotUsable(AsyncRequestNotUsableException e) {
+        log.warn("异步请求已不可用（客户端断开的伴生现象，不按系统异常处理）: {}", e.getMessage());
+        return R.fail(ErrorCode.SYSTEM_ERROR);
     }
 
     @ExceptionHandler(Exception.class)

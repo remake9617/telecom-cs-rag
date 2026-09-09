@@ -55,6 +55,7 @@ com.cs.<module>.<layer>
 
 - 类名 PascalCase；方法/变量 camelCase；常量 UPPER_SNAKE_CASE；包名全小写。
 - **例外：SSE 流式端点**的 Controller 方法返回 `SseEmitter` 而非 `R<T>`（`QaController.chatStream` 即此形态，`produces = text/event-stream`）。理由：流式响应是多次推送，无法包进一次性的 JSON 信封；其错误经 SSE `event: error` 负载下发 `{code, message}`（见 `contract/rest-api.md` 的 SSE 章节），code 仍取自 `ErrorCode` 分段。**除此例外，不得用其它返回类型绕过 `R<T>`。**
+- **SSE 端点的错误出口统一口径（批次 0 沉淀，合并 DEF-088 与限流实现两路独立发现，见 D41）**：SSE 端点的**一切错误**都必须以 SSE `event: error` + `{code, message}` 下发，**不得返回 JSON 响应体**。原因：客户端以 `Accept: text/event-stream` 发起请求，JSON 错误体会被 406 拒绝，或被 SSE 解析器当作正文渲染成乱码。覆盖范围：① **参数校验失败**——故 SSE 端点**不用 DTO 层 `@Valid`**，改在服务层校验并以 error 事件出口；② **限流拒绝**——`1005` 在 SSE 端点走 error 事件、在非 SSE 端点走 JSON；③ 任何业务错误。非 SSE 端点仍走 JSON + `GlobalExceptionHandler`。
 
 ## 5. 统一响应与错误码（契约核心）
 - 所有 REST 接口返回 `com.cs.framework.common.R<T>`：成功 `R.ok(data)`，失败抛异常。

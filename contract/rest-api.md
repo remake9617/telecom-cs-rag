@@ -15,6 +15,8 @@
 - **分页**：请求 `?current=1&size=10`；响应 `data = { records:[], total, current, size }`
 - **时间格式**：`yyyy-MM-dd HH:mm:ss`（东八区）。**实现说明**：后端通过全局 JSR-310 序列化器（`cs-bootstrap` 的 `JacksonConfig`）输出该格式——`spring.jackson.date-format` 对 `LocalDateTime` **无效**，故不走该配置项（见 D27）；`TrendVO.date` 是 `yyyy-MM-dd` 字符串，不受影响。
 - **错误**：非 0 的 `code` + `message`，HTTP 状态码统一 200（业务错误看 code）。**认证/授权例外**：未认证（无 token 或 token 失效）→ **HTTP 401**（前端据此跳登录）；已认证但角色不足 → **HTTP 200 + code=1003**（前端提示“无权限”，不跳登录）
+- **限流（批次 0 路 10，D42）**：Redis + Lua **滑动窗口**，默认 **60 秒 / 10 次，按 `userId` + 端点维度**，超阈返回 `1005 RATE_LIMITED`。**SSE 端点的限流拒绝走 SSE `event: error` + `{code:1005}` 而非 JSON 响应体**（见 `CONVENTIONS.md` §4 与 D41），非 SSE 端点走 JSON。当前施加限流的端点：`POST /api/qa/chat/stream`（每次调用消耗付费模型额度）。
+- **建单幂等（批次 0 路 10，D42）**：`POST /api/ticket` 在 **60 秒窗口**内以同一 `userId` + `conversationId` + `question` 重复提交，**返回同一张工单而非报错**（Redis `SET NX EX` 原子占位，value 存 ticketId）；窗口过后重新提交产生新工单。`POST /api/qa/chat/stream` 与 `POST /api/feedback` **不做幂等**——重复提问是合法行为，反馈已是 upsert 改票语义天然幂等。
 
 ---
 
@@ -29,7 +31,7 @@
 ## 2. 问答 `/api/qa`（cs-qa）
 | 方法 | 路径 | 入参 | 出参 | 说明 |
 |---|---|---|---|---|
-| POST | `/api/qa/chat/stream` | `{conversationId?, question}` | **SSE** | 流式问答（见下方 SSE 事件） |
+| POST | `/api/qa/chat/stream` | `{conversationId?, question}` | **SSE** | 流式问答（见下方 SSE 事件）。**受限流保护**（60s/10 次每用户，超阈走 SSE `error` 事件 + `code=1005`）；**参数校验在服务层**，`question` 为空经 SSE `error` 返回 `1001`（SSE 端点不用 DTO 层 `@Valid`，见 D41 / DEF-088） |
 | GET | `/api/qa/conversations` | — | `[ConversationVO{id,title,lastActiveAt}]` | 我的会话列表 |
 | GET | `/api/qa/conversations/{id}/messages` | — | `[MessageVO{id,role,content,references?,createdAt,tokenCost?}]` | 会话历史 |
 | DELETE | `/api/qa/conversations/{id}` | — | `null` | 删除会话 |
@@ -50,7 +52,7 @@
 ## 4. 工单 `/api/ticket`（cs-ticket）
 | 方法 | 路径 | 入参 | 出参 data | 说明 |
 |---|---|---|---|---|
-| POST | `/api/ticket` | `{question, conversationId?}` | `TicketVO` | 创建工单（AI 判定或用户手动） |
+| POST | `/api/ticket` | `{question, conversationId?}` | `TicketVO` | 创建工单（AI 判定或用户手动）。**幂等**：60 秒窗口内同 `userId`+`conversationId`+`question` 重复提交返回同一张工单而非报错（D42） |
 | GET | `/api/ticket/mine` | — | `[TicketVO]` | 我的工单（访客） |
 | GET | `/api/ticket` | `?status=&current=&size=` | `PageVO<TicketVO>` | 工单列表（管理员） |
 | PUT | `/api/ticket/{id}/reply` | `{reply}` | `TicketVO` | 后台回复（管理员） |
@@ -66,6 +68,7 @@
 | GET | `/api/stats/overview` | — | `OverviewVO{askCount, resolveRate, ticketRate, openTicketCount, kbCount, docCount, userCount}` | 概览看板（字段口径见下表注） |
 | GET | `/api/stats/hot-questions` | `?limit=10` | `[{question, count}]` | 热点问题 |
 | GET | `/api/stats/trend` | `?days=7` | `[{date, askCount, resolveCount}]` | 趋势 |
+| GET | `/api/stats/eval-runs` | `?limit=20` | `[EvalRunVO]` | **管理员**：RAG 评测历史看板。`cs-stats` 只读直查 `eval_result` 表，守 D24 依赖方向（评测执行在 cs-knowledge，见 D37） |
 
 > **`OverviewVO` 字段口径（D24 裁决，本轮冻结；此前契约用省略号 `...`，该 VO 实际上从未被冻结）**：
 > - `askCount` 咨询量 = `chat_message` 中 `role='user'` 的消息数。
@@ -88,6 +91,23 @@
 |---|---|---|---|---|
 | GET | `/api/health/ping` | — | `"pong"`（`R<String>`） | **公开（在放行清单内）**：**不发起任何模型调用**，仅证明应用已启动且可响应 HTTP；用途是容器 healthcheck / 负载均衡存活探针 |
 | GET | `/api/health/ai` | — | AI 联通探测明细（chat / embedding 两路各自的 OK\|FAIL + 模型名、维度或错误信息） | **管理员**：**会真实发起一次 chat + 一次 embedding 调用，消耗供应商额度**，故收归管理员（未认证 / 非管理员分别抛 1002 / 1003） |
+
+## 9. RAG 评估 `/api/eval`（cs-knowledge，管理员）
+| 方法 | 路径 | 入参 | 出参 data | 说明 |
+|---|---|---|---|---|
+| POST | `/api/eval/runs` | `{kbId?, mode?, topK?=5, vectorTopN?=20, keywordTopN?=20, minScore?, caseIds?}` | `{runId, status:"RUNNING"}` | **管理员**：触发一次评测，**异步执行**（不阻塞请求）；`mode` 缺省 `HYBRID_RERANK` 即生产行为 |
+| GET | `/api/eval/runs` | `?limit=20` | `[EvalResultVO]` | **管理员**：评测历史列表 |
+| GET | `/api/eval/runs/{id}` | — | `EvalResultVO` | **管理员**：单次评测详情（含 `status` 与失败时的 `errorMsg`） |
+| GET | `/api/eval/cases` | `?kbId=&limit=` | `[EvalCaseVO]` | **管理员**：评测用例列表 |
+| POST | `/api/eval/cases` | `{kbId?, question, expectedChunkIds?, expectedDocIds?, source?, note?}` | `EvalCaseVO` | **管理员**：新增/更新用例，`source` 缺省 `MANUAL` |
+| POST | `/api/eval/cases/dislike-sync` | — | `Integer`（新入池数） | **管理员**：把 `feedback` 表的 DISLIKE 样本回流为 bad case（`source='DISLIKE'`），**幂等**，二次调用返回 0 |
+
+> **评估口径（D37–D40，本轮冻结）**：
+> - **归属（D37）**：评测执行在 `cs-knowledge`（评估必须驱动检索，而 D24 规定 cs-stats 只读直查表、不依赖他模块 Service）；`cs-stats` 只提供 `GET /api/stats/eval-runs` 只读看板端点。
+> - **指标范围（D38）**：本轮只实现**检索侧可确定性计算**的六项指标；答案忠实度与幻觉率**不实现**（需 LLM 判定且不稳定，留批次 1），`eval_result` 表不建幻觉率列。
+> - **`refPrecision` 口径（D39）**：**文档粒度**（引用的 `docId` 落在期望文档集内的比例，期望文档缺失时由 chunk id 反查 `kb_chunk_meta` 补齐）。它**系统性高于** chunk 级的 `precisionAtK`，**两者不可直接比较、不可在报告中并列陈述而不加说明**。
+> - **DISLIKE 用例（D38）**：默认**不参与指标计算**（反例无正向标注，参与会使 recall 虚高），仅作 bad case 池供人工复查。
+> - **⚠ 当前数据的效力限制（D40，必读）**：现有 3 条种子用例的期望集取自默认通道 `HYBRID_RERANK` 的 top-2，构成**循环论证**——四个 mode 的 `recall` 全为 1.0、`precision` 全为 0.400 正是这个原因。**该数据不能用于证明「混合检索优于单一通道」**；当前唯一有效的信号是 `ndcg`（BM25 为 0.946）与 `refPrecision` 的通道间差异，且样本仅 3 条。批次 1 扩集时**必须人工独立标注、标注时不得查看任何检索通道的输出**。
 
 ---
 
@@ -125,6 +145,8 @@ data: {"code":3002,"message":"模型调用失败"}
 - `OverviewVO`：`{askCount, resolveRate, ticketRate, openTicketCount, kbCount, docCount, userCount}`（字段口径见第 6 节表注；`resolveRate` 与 `ticketRate` 均可为 `null`）
 - `HotQuestionVO`：`{question, count}` —— `GET /api/stats/hot-questions` 的元素
 - `TrendVO`：`{date, askCount, resolveCount}` —— `GET /api/stats/trend` 的元素（`date` 为 `yyyy-MM-dd` 字符串）
+- `EvalResultVO`：`{id, kbId, mode, caseCount, status(RUNNING/DONE/FAILED), recallAtK, precisionAtK, mrr, ndcg, hitRate, refPrecision, topK, errorMsg?, createdAt}` —— `/api/eval/runs` 系列的出参（`EvalRunVO` 是 cs-stats 侧的同源只读视图）
+- `EvalCaseVO`：`{id, kbId, question, expectedChunkIds?, expectedDocIds?, source(MANUAL/SAMPLED/DISLIKE), note?, createdAt}` —— `/api/eval/cases` 的出参
 - `PageVO<T>`：`{records:[T], total, current, size}`
 
 ### 枚举取值口径（本轮实测确认；**大小写敏感**，前端有直接依赖）
@@ -136,5 +158,8 @@ data: {"code":3002,"message":"模型调用失败"}
 | `KnowledgeBaseVO.status` | `ACTIVE` \| `DISABLED` | **字符串**，不是 Integer 1/0；实体为 TINYINT，由后端 VO 层做映射 |
 | `MessageVO.role` | `user` \| `assistant` | **必须小写**：前端严格比较 `role === 'user'` 决定气泡左右 |
 | `TicketVO.status` | `OPEN` \| `REPLIED` \| `CLOSED` | 大写 |
+| `RetrievalRequest.mode` / `EvalResultVO.mode` | `VECTOR` \| `BM25` \| `HYBRID` \| `HYBRID_RERANK` | **缺省 `HYBRID_RERANK` = 生产行为**；四通道复用同一套 ES 查询与 RRF 融合代码（在 D7「只做调参对比不改架构」的边界内） |
+| `EvalResultVO.status` | `RUNNING` \| `DONE` \| `FAILED` | 大写 |
+| `EvalCaseVO.source` | `MANUAL` \| `SAMPLED` \| `DISLIKE` | 大写 |
 
 > **`DocumentVO.status` 四态的可达性（本轮实测如实标注，关联 DEF-064）**：四态是 schema 层合法取值，但**当前入库为同步事务**——`IngestionService.ingest` 在 `insert` 时置 `PROCESSING`、同一事务末尾置 `DONE`，事务提交时对外已是 `DONE`，故 `PENDING`/`PROCESSING` **对外不可观测**；`upload`/`url` 路径失败会整行回滚、文档行直接消失，`FAILED` 在该路径**不可达**，仅 `reindex` 路径（非事务）会写 `FAILED`。连带后果：契约的「入库进度轮询」与前端 3 秒轮询实际**无进度可轮**，首次拉取即命中终止判定。异步入库（Pipeline 节点编排，D10 承诺项）挂阶段二解决（DEF-064）。

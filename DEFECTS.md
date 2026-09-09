@@ -31,9 +31,9 @@
 | 等级 | ◐ 修复中 | ☑ 已解决 | ⊘ 未排期 | ✗ 不修 | 合计 |
 |------|----------|----------|----------|--------|------|
 | P0   | 0        | 6        | 0        | 0      | 6    |
-| P1   | 0        | 26       | 2        | 0      | 28   |
-| P2   | 1        | 38       | 16       | 3      | 58   |
-| **合计** | **1** | **70** | **18** | **3** | **92** |
+| P1   | 0        | 26       | 3        | 0      | 29   |
+| P2   | 1        | 43       | 16       | 4      | 64   |
+| **合计** | **1** | **75** | **19** | **4** | **99** |
 
 ---
 
@@ -107,7 +107,7 @@
 | DEF-046 | audit_log 表建而零代码引用(grep=0)，但 DESIGN §5.1 列为 MVP 项 | 未完成功能 | schema.sql audit_log；grep 全仓 = 0 | 设计承诺未兑现，审计能力空缺 | cs-system | ⊘ | | | DEC-PEND-06 |
 | DEF-047 | sys_role/sys_permission 建表未启用关联映射，SysUser 用单 role 字段过渡 | 未完成功能 | schema.sql:24-38；SysUser entity | RBAC 停留在最简模型，阶段二升级需补关联 | cs-system | ⊘ | | | DEC-PEND-06；阶段二 |
 | DEF-048 | stat_snapshot 只写不读：SnapshotTask 每日 00:05 幂等写入但无查询端点 | 待落地 | cs-stats SnapshotTask | 每日写入零消费，数据堆积无业务价值 | cs-stats | ⊘ | | | DEC-PEND-07 |
-| DEF-049 | RetrievalRequest.kbId 与 minScore 声明但从未使用 | 代码冗余 | `RetrievalRequest.java` | 字段存在给调用方造成「可过滤」的错觉 | cs-knowledge | ⊘ | | | 阶段二多库路由时启用 |
+| DEF-049 | RetrievalRequest.kbId 与 minScore 声明但从未使用 | 代码冗余 | `RetrievalRequest.java` | 字段存在给调用方造成「可过滤」的错觉 | cs-knowledge | ☑ | 2026-09-09 | M5§(路9)：kbId 走 kNN filter + BM25 bool filter（keyword 传字符串）、minScore 作用于最终排序分（rerankScore 优先否则 RRF 分）；实测 kbId=7 recall 1.0 / 强置 kbId=1 recall 0 证明不串库，minScore=2.0 全过滤；两者缺省 null 时行为与改造前逐条一致 | 路9 启用（D37/D40） |
 | DEF-050 | QaService.chatStream 用默认 ForkJoinPool.commonPool，无专用线程池 | 性能隐患 | QaService.java | 高并发下 SSE 流与其他异步任务竞争线程，响应劣化 | cs-qa | ⊘ | | | 阶段二 |
 | DEF-051 | ES client 版本隐式锁定：根 pom 无 elasticsearch.version，升 Spring AI 会静默错配 | 配置隐患 | 根 pom.xml；`deploy/elasticsearch/Dockerfile:7` | Spring AI 升级后 client/server 版本分裂，运行期才暴露 | 根 pom + deploy | ⊘ | | | DEC-PEND-08 |
 | DEF-052 | docker-compose.yml 只有中间件三件套，缺 backend/frontend 编排 | 部署缺口 | docker-compose.yml | 换机部署必须人工记得跑 init-index.sh，不可复现 | deploy | ☑ | 2026-09-09 | M5§三(路6 B1)：全栈五服务 healthy + es-init 幂等建索引 + 27 端点经 8088 全回归 | 路6 全栈编排（name 钉死防卷孤立，D35） |
@@ -136,7 +136,7 @@
 | DEF-078 | F3：SSE 完成后 async dispatch 抛 AuthorizationDeniedException「Access Denied」+response already committed 3条ERROR | 日志噪音 | Spring Security6 未放行 DispatcherType.ASYNC | 功能无害(客户端已收全流)；ERROR 日志噪音 | cs-system | ☑ | 2026-09-09 | M5§三(路8)：放行 ASYNC 后 SSE 完成日志零 AccessDenied（改动前 M4 为 3 条 ERROR） | 路8 SecurityConfig 放行（含安全性论证注释） |
 | DEF-079 | 项目无「禁用用户」管理端点，sys_user.status 仅在登录处被消费，路8 实现的 AuthService.invalidateUser(userId) 当前无任何调用方 | 功能缺口 | AuthService.invalidateUser 全仓 grep 无调用方；sys_user.status 仅登录路径消费 | 管理员无法封号；路8 的「用户禁用即时失效」能力有实现无入口，只能靠 redis-cli 手工写时间戳验证 | cs-system | ⊘ | | | 归管理端增强批次（与 DEF-047 RBAC 升级同期）；路8 于 2026-09-05 上报，统筹 2026-09-09 补录（原收口工作单漏列此 ID 致悬空引用，同类问题 A 轮 DEF-065 已发生过一次） |
 | DEF-080 | QueryRewriteService 未校验模型输出有效性，「-」等垃圾被当作有效重写污染检索 | 代码缺陷 | QueryRewriteService.rewrite | 垃圾重写劣化检索质量 | cs-qa | ☑ | 2026-09-09 | M5§三(路7 补刀1)：isValidRewrite 三条判定，13 项断言 PASS | 路7 补刀1 |
-| DEF-081 | 客户端断开后 Flux 仍继续生成至完毕（token 白烧） | 资源浪费 | QaService chatStream | SSE 取消后模型调用未中止 | cs-qa | ⊘ | | | 挂路10（与 C5 限流/记忆摘要一并处理） |
+| DEF-081 | 客户端断开后 Flux 仍继续生成至完毕（token 白烧） | 资源浪费 | QaService chatStream | SSE 取消后模型调用未中止 | cs-qa | ☑ | 2026-09-09 | M5§8.3(路10)：kill 客户端后同毫秒「已生成 300 字落库」日志 + conv41 库内半截回答 + 0 条 ERROR | 路10 takeUntilOther 取消联动（D43） |
 | DEF-082 | saveAssistantMessage/saveUserMessage 无 content 守卫，null 撞 NOT NULL 约束且被宽 catch 统一报成 3002 掩盖真因 | 代码缺陷 | QaService 落库路径 | 排障方向被误导（容器实测实际发生） | cs-qa | ☑ | 2026-09-09 | M5§三(路7 补刀2)：入口守卫 + resolveErrorCode 按异常类型分派，16/16 断言 PASS | 路7 补刀2（D32） |
 | DEF-083 | SSE 经 nginx 的逐包穿透未实测（proxy_buffering off 是否生效无证据） | 部署验证缺口 | deploy/nginx/nginx.conf | 若攒包则流式打字机效果完全失效 | deploy | ☑ | 2026-09-09 | M5§三(路6)：SSE 40+ 事件跨 5.5s 逐包到达（逐行时间戳留证） | 路6 实测闭环 |
 | DEF-084 | compose 项目名随目录变化，阶段一数据卷被静默孤立（aibishe_* 与 telecom-cs-rag_* 两套卷并存） | 部署缺陷 | docker-compose.yml 缺顶层 name | 数据「消失」假象，实为旧卷不再挂载 | deploy | ☑ | 2026-09-09 | M5§三(路6)：yml 钉死 name: telecom-cs-rag 后旧卷回归（24 会话、doc1 三 chunks、两个旧知识库） | 路6 修复（D35） |
@@ -147,6 +147,13 @@
 | DEF-090 | 历史工单 ticket3~8 为 9 月 4–6 日 GBK 乱码数据（PowerShell 内联中文传参遗留），答辩演示观感差 | 数据卫生 | ticket 表 | 管理后台工单列表出现乱码 | 数据 | ☑ | 2026-09-09 | M5§三(收口)：清理乱码与三路测试数据，p9- 前缀重建演示数据（kb4/doc6/conv34/ticket10 REPLIED/resolveRate=0.5） | 收口清理+重建 |
 | DEF-091 | 启动包/部署手册 SSE 示例把请求字段写成 message，契约实际是 question，后续路会抄示例 | 文档勘误 | docs/reports/deploy-guide.md §8 示例；统筹派单消息 | 按示例构造请求全部 3002，浪费整轮排障 | 文档 | ☑ | 2026-09-09 | M5§三(收口)：deploy-guide 示例已改 question；verify-integration.ps1 本就正确 | 收口修正；启动包示例位置已列回执供统筹知会 |
 | DEF-092 | logout 二次调用返回 1002 而非契约承诺的幂等 code=0（已拉黑 token 被过滤器拦截，到不了 Controller） | 代码缺陷 | SecurityConfig 放行清单无 logout | 登出后前端再调 logout 会得到错误提示 | cs-system | ◐ | | | 收口已修复（SecurityConfig 精确放行 + 安全性论证注释），cs-server.jar 已重新构建；**部署复验待下次部署**（用户裁定跳过本轮部署验证） |
+| DEF-093 | SSE 端点的 JSON 错误通道不可用：前端以 `Accept: text/event-stream` 请求，JSON 错误体会被 406 拒绝或被 SSE 解析器当正文渲染成乱码 | 架构口径缺失 | 路10 限流实现实测发现 | 任何试图在 SSE 端点走 JSON 错误出口的设计（含 DTO 层 `@Valid`）都会静默失效 | cs-framework + contract | ☑ | 2026-09-09 | 与 DEF-088 同源，两路独立发现后收敛为统一口径，已写入 CONVENTIONS §4 与 D41；路10 限流拒绝改走 SSE error 事件实测通过 | 上升为架构口径（D41） |
+| DEF-094 | `Flux.toStream()` 的阻塞迭代器在外部直接 cancel 上游订阅时收不到终止哨兵，迭代器永久挂起（DEF-081 首版实现的缺陷，表现为 kill 客户端后线程卡死） | 代码缺陷 | 路10 首版实现实测 | 取消联动失效，线程泄漏 | cs-qa | ☑ | 2026-09-09 | M5§8.3(路10)：改用 `takeUntilOther(kill 信号)` 后迭代同毫秒退出 | 路10 修复（D43） |
+| DEF-095 | 硅基流动 bge-reranker 远程推理分数存在 ~3e-4 抖动（同 query 第 3 次调用 0.9694714→0.9689561，并列结构不变），chunkId/顺序/RRF 分全等 | 环境（供应商侧） | 路9 默认行为回归实测 | **污染回归判据**：逐字节 diff 会因末位抖动假报失败 | 环境 | ✗ | | | **不修**：供应商侧行为，非本项目缺陷。**但回归判据必须排除 rerank 分末位**，此注意事项须写进测试规范与批次1 路14 的对比实验方法 |
+| DEF-096 | 评测集「自标注」导致 recall 无区分度：3 条种子用例的期望集取自默认通道 HYBRID_RERANK 的 top-2，构成循环论证，四个 mode 的 recall 全为 1.0、precision 全为 0.400 | **方法论缺陷** | 路9 四 mode 消融实测数据 | **当前消融数据不能用于证明「混合检索优于单一通道」**，答辩被问「期望集怎么标注的」即崩；唯一有效信号是 ndcg（BM25 0.946）与 ref_precision 的通道间差异，且样本仅 3 条 | cs-knowledge eval | ⊘ | | | 挂批次1 路14：扩集时必须人工独立标注、标注时不看任何通道输出（已记为 D40 硬约束） |
+| DEF-097 | cs-framework 新增 spring-boot-starter-data-redis 后全体模块传递依赖 Redis，而限流/幂等切面未做条件装配（`@ConditionalOnBean(StringRedisTemplate)`） | 架构隐患 | cs-framework/pom.xml + ratelimit/idempotent 切面 | 脱离 Redis 的单元测试会启动失败，**直接影响路11 单测选型**（D33 已定 JUnit5+Mockito 纯单测，需确认切面不拖累） | cs-framework | ⊘ | | | 路11 开工前先核实；若确实阻塞则加条件装配 |
+| DEF-098 | 共享测试 fixture `test-data/q3.json` 被各路反复改写数据前缀（p6- → p11-），前缀应由脚本运行时拼接而非烘焙进 fixture | 流程缺陷 | git diff test-data/q3.json | `verify-integration.ps1` 产生的数据归属随最后改动者漂移，跨路复用时前缀失真 | test-data | ⊘ | | | 建议批次1 前把前缀改为脚本参数 |
+| DEF-099 | `test-data/p11-token.txt`（活的 JWT 令牌）遗留在工作树，若被 `git add -A` 扫入即凭据入库；Bearer token 在 24h 内谁拿到都能冒充该用户，登出黑名单也拦不住未曾登出的令牌 | **凭据卫生** | git status 实测发现 | 与 DEF-086 同类（凭据泄露面）；路6 收口时删了自己的 p9-token.txt，路10 漏删 | test-data | ☑ | 2026-09-09 | 统筹提交前拦下并删除该文件，未进 git；`.gitignore` 已加 `test-data/*-token.txt`、`test-data/*token*.txt`、`*.jwt` 三条永久防护 | 统筹拦截 + gitignore 加固 |
 
 ---
 

@@ -76,3 +76,10 @@ desktop.ini
 # ============ 文档（已确认：docs 不入 git）============
 docs/
 # 说明：docs/DESIGN.md 不入库（遵循偏好）；根目录 DECISIONS.md 作为决策日志默认入库。
+
+# ============ 凭据与令牌（防误提交，DEF-086 / DEF-099 同类风险加固）============
+# 实测脚本运行期登录取得的 JWT 一律写到匹配下列模式的文件，绝不入仓。
+# 已发生两次：路6 的 p9-token.txt（自行删除）、路10 的 p11-token.txt（统筹提交前拦下）。
+test-data/*-token.txt
+test-data/*token*.txt
+*.jwt

@@ -145,6 +145,39 @@ CREATE TABLE IF NOT EXISTS stat_snapshot (
   UNIQUE KEY uk_date (stat_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统计快照';
 
+CREATE TABLE IF NOT EXISTS eval_case (
+  id                 BIGINT        PRIMARY KEY AUTO_INCREMENT,
+  kb_id              BIGINT        COMMENT '目标知识库（null 表示不限定库，跨库用例）',
+  question           VARCHAR(512)  NOT NULL COMMENT '评测问题',
+  expected_chunk_ids JSON          COMMENT '期望命中的 ES chunk id 列表（细粒度标注）',
+  expected_doc_ids   JSON          COMMENT '期望命中的文档 id 列表（粗粒度兜底标注）',
+  source             VARCHAR(32)   NOT NULL DEFAULT 'MANUAL' COMMENT 'MANUAL/SAMPLED/DISLIKE（点踩回流 bad case 池）',
+  note               VARCHAR(512)  COMMENT '备注（DISLIKE 用例记录 message_id 幂等去重）',
+  created_at         DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at         DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_kb (kb_id),
+  KEY idx_source (source)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='RAG 评测用例（路9 评估体系）';
+
+CREATE TABLE IF NOT EXISTS eval_result (
+  id             BIGINT       PRIMARY KEY AUTO_INCREMENT COMMENT '即 run_id，一次评测运行的唯一标识',
+  kb_id          BIGINT       COMMENT '目标知识库（null = 全库）',
+  mode           VARCHAR(32)  NOT NULL COMMENT '检索通道：VECTOR/BM25/HYBRID/HYBRID_RERANK',
+  case_count     INT          NOT NULL DEFAULT 0 COMMENT '本次加载的用例总数',
+  status         VARCHAR(16)  NOT NULL DEFAULT 'RUNNING' COMMENT 'RUNNING/DONE/FAILED（异步执行状态）',
+  recall_at_k    DOUBLE       COMMENT '召回率：期望命中 chunk 被 top-k 召回的比例（宏平均）',
+  precision_at_k DOUBLE       COMMENT '准确率：top-k 结果中属于期望集合的比例（宏平均）',
+  mrr            DOUBLE       COMMENT '平均倒数排名：第一条命中结果排名倒数的均值',
+  ndcg           DOUBLE       COMMENT '归一化折损累计增益（二值相关）',
+  hit_rate       DOUBLE       COMMENT '命中率：至少召回一条期望 chunk 的用例占比',
+  ref_precision  DOUBLE       COMMENT '引用准确率：返回给用户的引用落在期望文档集合内的比例',
+  top_k          INT          COMMENT '本次运行的 TopK',
+  error_msg      VARCHAR(512) COMMENT 'FAILED 时的错误摘要',
+  created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_kb (kb_id),
+  KEY idx_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='RAG 评测运行结果（检索侧确定性指标；幻觉率/忠实度等生成侧指标属批次1，刻意未建列，见 M5 路9 回执）';
+
 CREATE TABLE IF NOT EXISTS audit_log (
   id         BIGINT       PRIMARY KEY AUTO_INCREMENT,
   user_id    BIGINT,
@@ -163,8 +196,8 @@ ON DUPLICATE KEY UPDATE name = VALUES(name);
 -- 注：默认管理员账号 admin 待 M3 认证模块实现时用 BCrypt 生成密码后插入。
 
 -- =====================================================================
--- 阶段二预留（暂不建表，M5+ 实现可观测/评估/意图树时补充）：
+-- 阶段二预留（暂不建表，M5+ 实现可观测/意图树时补充）：
 --   trace_run / trace_node   全链路 Trace
 --   intent_node              树形意图节点
---   eval_result              RAG 评估结果（召回率/准确率/幻觉率/解决率）
+-- 注：eval_case / eval_result 已于批次 0 Wave 2 路9 实建（上方），不再列入预留。
 -- =====================================================================

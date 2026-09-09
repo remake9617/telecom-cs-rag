@@ -6,6 +6,7 @@ import co.elastic.clients.elasticsearch.core.search.Hit;
 import com.cs.infra.ai.rerank.RerankRequest;
 import com.cs.infra.ai.rerank.RerankResult;
 import com.cs.infra.ai.rerank.RerankService;
+import com.cs.knowledge.dto.RetrievalMode;
 import com.cs.knowledge.dto.RetrievalRequest;
 import com.cs.knowledge.dto.RetrievedChunk;
 import com.cs.knowledge.service.RetrievalService;
@@ -60,59 +61,106 @@ public class RetrievalServiceImpl implements RetrievalService {
         try {
             String query = request.getQuery();
 
+            // 0) 消融通道开关（路9）：null 视为 HYBRID_RERANK（生产默认），缺省行为与改造前逐条一致
+            RetrievalMode mode = RetrievalMode.ofOrDefault(request.getMode());
+
             // 1) query 向量化（bge-m3 → 1024 维）。检索侧 embedding 失败无法降级成等价物
             //    （没有向量就没法 kNN），退化为纯 BM25 检索并记录，而不是返回空（空会被上游
-            //    误判为「无召回」而建工单转人工）
+            //    误判为「无召回」而建工单转人工）。纯 BM25 通道不需要向量，跳过向量化省一次模型调用
             float[] queryVector = null;
-            try {
-                queryVector = embeddingModel.embed(query);
-            } catch (Exception embedEx) {
-                log.warn("query 向量化失败，退化为纯 BM25 检索（向量通道跳过）: {}", embedEx.getMessage());
+            if (mode != RetrievalMode.BM25) {
+                try {
+                    queryVector = embeddingModel.embed(query);
+                } catch (Exception embedEx) {
+                    log.warn("query 向量化失败，退化为纯 BM25 检索（向量通道跳过）: {}", embedEx.getMessage());
+                }
             }
 
-            // 2) 向量 kNN 召回 + 3) BM25 关键词召回（MVP 单知识库，暂不按 kb_id 过滤；多库时加 term filter）
+            // 2) 向量 kNN 召回 + 3) BM25 关键词召回。
+            //    kbId 非 null 时两通道都加 metadata.kb_id term filter（路9 启用，闭环 DEF-049）
             List<RetrievedChunk> vectorHits = queryVector != null
-                    ? knnSearch(queryVector, request.getVectorTopN())
+                    ? knnSearch(queryVector, request.getVectorTopN(), request.getKbId())
                     : List.of();
-            List<RetrievedChunk> keywordHits = bm25Search(query, request.getKeywordTopN());
+            List<RetrievedChunk> keywordHits = bm25Search(query, request.getKeywordTopN(), request.getKbId());
 
-            // 4) RRF 融合去重
-            List<RetrievedChunk> fused = rrfFuse(vectorHits, keywordHits);
+            // 4) 通道裁剪 + RRF 融合去重（单通道时 RRF 退化为原序，分数为排名分）
+            List<RetrievedChunk> fused = switch (mode) {
+                case VECTOR -> rrfFuse(vectorHits, List.of());
+                case BM25 -> rrfFuse(List.of(), keywordHits);
+                case HYBRID, HYBRID_RERANK -> rrfFuse(vectorHits, keywordHits);
+            };
             if (fused.isEmpty()) {
                 return List.of();
             }
 
-            // 5) Rerank 精排取 TopK
-            return rerank(query, fused, request.getTopK(), request.isEnableRerank());
+            // 5) Rerank 精排取 TopK（只在 HYBRID_RERANK 通道生效；enableRerank 是其既有 kill-switch）
+            List<RetrievedChunk> result = mode == RetrievalMode.HYBRID_RERANK
+                    ? rerank(query, fused, request.getTopK(), request.isEnableRerank())
+                    : fused.stream().limit(request.getTopK()).collect(Collectors.toList());
+
+            // 6) minScore 过滤（路9 启用，闭环 DEF-049）：阈值作用在最终排序分上
+            //    （rerankScore 优先、否则 RRF 分，与 ReferenceVO.score 口径一致）；null 不过滤
+            if (request.getMinScore() != null) {
+                double threshold = request.getMinScore();
+                result = result.stream()
+                        .filter(c -> (c.getRerankScore() != null ? c.getRerankScore() : c.getScore()) >= threshold)
+                        .collect(Collectors.toList());
+            }
+            return result;
         } catch (Exception e) {
             log.error("混合检索失败: {}", e.getMessage(), e);
             return List.of();
         }
     }
 
-    /** 向量 kNN 检索（embedding 字段，cosine 相似度） */
-    private List<RetrievedChunk> knnSearch(float[] vector, int topN) throws Exception {
+    /**
+     * 向量 kNN 检索（embedding 字段，cosine 相似度）。
+     *
+     * <p>kbId 非 null 时加 metadata.kb_id term filter（kNN 的 filter 在召回阶段收窄候选，
+     * 不影响相似度打分）；kbId 为 null 时不加 filter，与既有行为逐字节一致。</p>
+     */
+    private List<RetrievedChunk> knnSearch(float[] vector, int topN, Long kbId) throws Exception {
         List<Float> queryVector = new ArrayList<>(vector.length);
         for (float v : vector) {
             queryVector.add(v);
         }
-        SearchResponse<JsonNode> resp = esClient.search(s -> s
-                .index(INDEX)
-                .size(topN)
-                .knn(k -> k
-                        .field("embedding")
-                        .queryVector(queryVector)
-                        .k(topN)
-                        .numCandidates(topN * 5)), JsonNode.class);
+        SearchResponse<JsonNode> resp = esClient.search(s -> {
+            s.index(INDEX)
+                    .size(topN)
+                    .knn(k -> {
+                        k.field("embedding")
+                                .queryVector(queryVector)
+                                .k(topN)
+                                .numCandidates(topN * 5);
+                        if (kbId != null) {
+                            // metadata.kb_id 是 keyword 类型，值必须传字符串（与 metadata.doc_id 同理）
+                            k.filter(f -> f.term(t -> t.field("metadata.kb_id").value(String.valueOf(kbId))));
+                        }
+                        return k;
+                    });
+            return s;
+        }, JsonNode.class);
         return toChunks(resp);
     }
 
-    /** BM25 关键词检索（content 字段，IK 分词） */
-    private List<RetrievedChunk> bm25Search(String query, int topN) throws Exception {
-        SearchResponse<JsonNode> resp = esClient.search(s -> s
-                .index(INDEX)
-                .size(topN)
-                .query(q -> q.match(m -> m.field("content").query(query))), JsonNode.class);
+    /**
+     * BM25 关键词检索（content 字段，IK 分词）。
+     *
+     * <p>kbId 非 null 时包一层 bool + filter（must 保持原 match 打分，filter 只收窄候选、
+     * 不参与相关性打分）；kbId 为 null 时保持原有裸 match 查询，与既有行为逐字节一致。</p>
+     */
+    private List<RetrievedChunk> bm25Search(String query, int topN, Long kbId) throws Exception {
+        SearchResponse<JsonNode> resp = esClient.search(s -> {
+            s.index(INDEX).size(topN);
+            if (kbId != null) {
+                s.query(q -> q.bool(b -> b
+                        .must(m -> m.match(mq -> mq.field("content").query(query)))
+                        .filter(f -> f.term(t -> t.field("metadata.kb_id").value(String.valueOf(kbId))))));
+            } else {
+                s.query(q -> q.match(m -> m.field("content").query(query)));
+            }
+            return s;
+        }, JsonNode.class);
         return toChunks(resp);
     }
 
